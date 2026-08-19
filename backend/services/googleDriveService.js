@@ -5,12 +5,12 @@
 //
 // Auth is a Google Cloud service account (not OAuth) — the right pattern for
 // an unattended 9am cron job, since it has no expiring user consent to renew.
-// Setup:
-//   1. Create a service account in Google Cloud Console, download its JSON key.
-//   2. Put the key on this server, then set EITHER:
-//        GOOGLE_SERVICE_ACCOUNT_KEY_FILE = absolute path to the key file, OR
-//        GOOGLE_SERVICE_ACCOUNT_KEY      = the key file's full JSON, one line
-//   3. Share the Drive folder recruiters upload into with the service
+// Setup (any ONE of these credential methods works):
+//   1. JSON key file path:     GOOGLE_SERVICE_ACCOUNT_KEY_FILE = /abs/path/key.json
+//   2. JSON key inline:        GOOGLE_SERVICE_ACCOUNT_KEY = '{"type":"service_account",...}' (one line)
+//   3. Email + Private Key:    GOOGLE_SERVICE_ACCOUNT_EMAIL = "svc@project.iam.gserviceaccount.com"
+//                              GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY = "-----BEGIN PRIVATE KEY-----\n..." (with literal \n newlines)
+//   Then: Share the Drive folder recruiters upload into with the service
 //      account's `client_email` (found in the key JSON) — same as sharing a
 //      folder with a coworker. Grant "Editor" so it can move the processed file.
 //   4. Set GOOGLE_DRIVE_FOLDER_ID to that folder's ID (from its Drive URL).
@@ -25,7 +25,11 @@ const DRIVE_SCOPES = ['https://www.googleapis.com/auth/drive'];
 const PROCESSED_FOLDER_NAME = 'processed';
 
 function hasCredentials() {
-  return !!(process.env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE || process.env.GOOGLE_SERVICE_ACCOUNT_KEY);
+  return !!(
+    process.env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE ||
+    process.env.GOOGLE_SERVICE_ACCOUNT_KEY ||
+    (process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY)
+  );
 }
 
 // Naukri-import-specific: credentials + the Drive folder recruiters upload
@@ -37,8 +41,17 @@ function isConfigured() {
 
 function configurationReason() {
   const missing = [];
-  if (!process.env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE && !process.env.GOOGLE_SERVICE_ACCOUNT_KEY) {
-    missing.push('GOOGLE_SERVICE_ACCOUNT_KEY_FILE or GOOGLE_SERVICE_ACCOUNT_KEY');
+  const hasKeyFile = !!process.env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE;
+  const hasKeyString = !!process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+  const hasEmailKey = !!(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY);
+  if (!hasKeyFile && !hasKeyString && !hasEmailKey) {
+    missing.push('GOOGLE_SERVICE_ACCOUNT_KEY_FILE or GOOGLE_SERVICE_ACCOUNT_KEY or GOOGLE_SERVICE_ACCOUNT_EMAIL + GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY');
+  }
+  if (process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && !process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
+    missing.push('GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY');
+  }
+  if (!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
+    missing.push('GOOGLE_SERVICE_ACCOUNT_EMAIL');
   }
   if (!process.env.GOOGLE_DRIVE_FOLDER_ID) missing.push('GOOGLE_DRIVE_FOLDER_ID');
   return `Missing ${missing.join(' and ')} in .env.`;
@@ -52,9 +65,23 @@ function getDriveClient() {
   let auth;
   if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE) {
     auth = new google.auth.GoogleAuth({ keyFile: process.env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE, scopes: DRIVE_SCOPES });
-  } else {
+  } else if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY) {
     const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY);
     auth = new google.auth.GoogleAuth({ credentials, scopes: DRIVE_SCOPES });
+  } else if (process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
+    // Email + private key pair (e.g. Firebase Admin SDK-style env vars) —
+    // equivalent to the JSON key, just split across two env vars instead of
+    // one JSON blob. \n must be literal in the env var; unescaped here.
+    const privateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY.replace(/\\n/g, '\n');
+    auth = new google.auth.GoogleAuth({
+      credentials: {
+        client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+        private_key: privateKey
+      },
+      scopes: DRIVE_SCOPES
+    });
+  } else {
+    throw new Error('Google Drive credentials not configured. Set GOOGLE_SERVICE_ACCOUNT_KEY_FILE, GOOGLE_SERVICE_ACCOUNT_KEY, or GOOGLE_SERVICE_ACCOUNT_EMAIL + GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY.');
   }
 
   cachedDrive = google.drive({ version: 'v3', auth });

@@ -44,7 +44,12 @@ async function sendOutreachEmails(recipients, rawSubject, rawBody) {
 
   for (const r of recipients) {
     const subject = fillTemplate(rawSubject, r.vars);
-    const body = fillTemplate(rawBody, r.vars);
+    let body = fillTemplate(rawBody, r.vars);
+    // If a Form link was computed but the template body doesn't reference
+    // {{formLink}}, still append it so it's never silently dropped from the email.
+    if (r.vars.formLink && !rawBody.includes('{{formLink}}')) {
+      body += `\n\nGoogle Form link: ${r.vars.formLink}`;
+    }
     try {
       await transporter.sendMail({
         from: process.env.EMAIL_FROM || process.env.SMTP_USER,
