@@ -6,7 +6,19 @@
 // same pattern as linkedinService.js.
 
 const { Resend } = require('resend');
-const resendClient = new Resend(process.env.RESEND_API_KEY);
+
+// Constructed lazily (not at module load) so requiring this file never
+// crashes the whole server just because RESEND_API_KEY isn't set yet — same
+// no-op-until-configured pattern as every other integration here. The
+// Resend SDK itself throws in its constructor if the key is missing, so
+// building it eagerly at the top of the file took the entire app down with
+// it on startup, before the EMAIL_ENABLED/RESEND_API_KEY checks below ever
+// got a chance to run.
+let cachedClient = null;
+function getResendClient() {
+  if (!cachedClient) cachedClient = new Resend(process.env.RESEND_API_KEY);
+  return cachedClient;
+}
 
 function fillTemplate(str, vars) {
   return str.replace(/{{(.*?)}}/g, (_, key) => vars[key.trim()] || `{{${key.trim()}}}`);
@@ -37,7 +49,7 @@ async function sendOutreachEmails(recipients, rawSubject, rawBody) {
       body += `\n\nGoogle Form link: ${r.vars.formLink}`;
     }
     try {
-      await resendClient.emails.send({
+      await getResendClient().emails.send({
         from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
         to: r.email,
         subject,
