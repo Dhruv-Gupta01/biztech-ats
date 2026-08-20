@@ -1,28 +1,15 @@
-// Real outbound email via SMTP (Nodemailer). Self-serve — works with a Gmail
-// app password, a free Ethereal test account, or any SMTP provider, no partner
-// approval needed (unlike LinkedIn's Talent Solutions API). Sends ONE email
-// per recipient, never CC'ing candidates together.
+// Real outbound email via Resend API. Self-serve — works with a Resend API key,
+// no partner approval needed. Sends ONE email per recipient, never CC'ing
+// candidates together.
 //
-// Until real SMTP credentials are set, this safely no-ops and reports why —
+// Until real credentials are set, this safely no-ops and reports why —
 // same pattern as linkedinService.js.
 
-const nodemailer = require('nodemailer');
-
-let cachedTransporter = null;
-
-function getTransporter() {
-  if (cachedTransporter) return cachedTransporter;
-  cachedTransporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT) || 587,
-    secure: Number(process.env.SMTP_PORT) === 465,
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
-  });
-  return cachedTransporter;
-}
+const { Resend } = require('resend');
+const resendClient = new Resend(process.env.RESEND_API_KEY);
 
 function fillTemplate(str, vars) {
-  return str.replace(/{{(.*?)}}/g, (_, key) => vars[key.trim()] ?? `{{${key.trim()}}}`);
+  return str.replace(/{{(.*?)}}/g, (_, key) => vars[key.trim()] || `{{${key.trim()}}}`);
 }
 
 // Sends one personalized email per candidate. Returns a per-recipient result
@@ -32,14 +19,13 @@ async function sendOutreachEmails(recipients, rawSubject, rawBody) {
     return recipients.map((r) => ({
       email: r.email,
       sent: false,
-      reason: 'Email sending disabled. Set EMAIL_ENABLED=true in .env with real SMTP credentials to go live.'
+      reason: 'Email sending disabled. Set EMAIL_ENABLED=true in .env with real Resend credentials to go live.'
     }));
   }
-  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    return recipients.map((r) => ({ email: r.email, sent: false, reason: 'Missing SMTP_HOST, SMTP_USER, or SMTP_PASS in .env.' }));
+  if (!process.env.RESEND_API_KEY) {
+    return recipients.map((r) => ({ email: r.email, sent: false, reason: 'Missing RESEND_API_KEY in .env.' }));
   }
 
-  const transporter = getTransporter();
   const results = [];
 
   for (const r of recipients) {
@@ -51,8 +37,8 @@ async function sendOutreachEmails(recipients, rawSubject, rawBody) {
       body += `\n\nGoogle Form link: ${r.vars.formLink}`;
     }
     try {
-      await transporter.sendMail({
-        from: process.env.EMAIL_FROM || process.env.SMTP_USER,
+      await resendClient.emails.send({
+        from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
         to: r.email,
         subject,
         text: body
