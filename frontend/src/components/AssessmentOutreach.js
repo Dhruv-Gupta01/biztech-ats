@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { emailTemplates } from '../data/dummyData';
-import { fetchCandidates, fetchRoles, sendOutreachEmail } from '../api/api';
+import { fetchCandidates, fetchRoles, sendOutreachEmail, fetchEmailTemplates } from '../api/api';
+import TemplateManager from './TemplateManager';
 
 function fillTemplate(str, vars) {
   return str.replace(/{{(.*?)}}/g, (_, key) => vars[key.trim()] ?? `{{${key.trim()}}}`);
@@ -24,9 +25,11 @@ function AssessmentOutreach() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [selectedIds, setSelectedIds] = useState([]);
+  const [roleFilter, setRoleFilter] = useState('');
   const [templateId, setTemplateId] = useState(emailTemplates[0].id);
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState(null);
+  const [showTemplateManager, setShowTemplateManager] = useState(false);
 
   useEffect(() => {
     Promise.all([fetchCandidates(), fetchRoles()])
@@ -40,7 +43,23 @@ function AssessmentOutreach() {
       .finally(() => setLoading(false));
   }, []);
 
-  const template = emailTemplates.find((t) => t.id === templateId);
+  // Fetch templates from API
+  const [templates, setTemplates] = useState([]);
+  useEffect(() => {
+    fetchEmailTemplates()
+      .then((res) => {
+        if (res.success && res.data.length > 0) {
+          setTemplates(res.data);
+          setTemplateId(res.data[0]._id);
+        } else if (res.success && res.data.length === 0) {
+          // If no templates in DB, seed with defaults from dummyData
+          setTemplates(emailTemplates);
+        }
+      })
+      .catch((err) => console.error('[AssessmentOutreach] template fetch failed:', err));
+  }, []);
+
+  const template = templates.find((t) => t._id === templateId || t.id === templateId);
   const primaryCandidate = candidates.find((c) => c._id === selectedIds[0]) || candidates[0];
   const role = primaryCandidate ? roles.find((r) => r.code === primaryCandidate.roleCode) : null;
 
@@ -66,7 +85,7 @@ function AssessmentOutreach() {
     setSending(true);
     setSendResult(null);
     try {
-      const res = await sendOutreachEmail(selectedIds, template.subject, template.body);
+      const res = await sendOutreachEmail(selectedIds, template.subject, template.body, template.attachments || []);
       setSendResult({ ok: res.data.failedCount === 0, message: res.message, details: res.data.results });
     } catch (err) {
       setSendResult({ ok: false, message: err.message, details: [] });
@@ -102,8 +121,15 @@ function AssessmentOutreach() {
         <div className="outreach-layout">
           <div className="card">
             <h3 style={{ marginTop: 0, fontSize: 14 }}>Select Candidates ({selectedIds.length})</h3>
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-500)' }}>Filter by Role Code</label>
+              <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid var(--border)', marginTop: 4 }}>
+                <option value="">All role codes</option>
+                {roles.map((r) => <option key={r.code} value={r.code}>{r.code} — {r.title}</option>)}
+              </select>
+            </div>
             <div className="candidate-select-list">
-              {candidates.map((c) => (
+              {candidates.filter((c) => !roleFilter || c.roleCode === roleFilter).map((c) => (
                 <label key={c._id} className={'candidate-select-item' + (selectedIds.includes(c._id) ? ' selected' : '')}>
                   <input type="checkbox" checked={selectedIds.includes(c._id)} onChange={() => toggleCandidate(c._id)} />
                   <div>
@@ -119,7 +145,7 @@ function AssessmentOutreach() {
             <h3 style={{ marginTop: 0, fontSize: 14 }}>Email Template Builder</h3>
             <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-500)' }}>Template</label>
             <select value={templateId} onChange={(e) => setTemplateId(e.target.value)} style={{ width: '100%', padding: 10, borderRadius: 8, border: '1px solid var(--border)', margin: '6px 0 14px' }}>
-              {emailTemplates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              {templates.map((t) => <option key={t._id || t.id} value={t._id || t.id}>{t.name}</option>)}
             </select>
 
             <div className="template-vars">
@@ -138,6 +164,17 @@ function AssessmentOutreach() {
                   <strong>Subject:</strong> {previewSubject}
                   {'\n\n'}
                   {previewBody}
+                  {template && template.attachments && template.attachments.length > 0 && (
+                    <>
+                      {'\n\n'}
+                      <strong>Attachments:</strong>
+                      <ul style={{ margin: '4px 0 0 18px', padding: 0 }}>
+                        {template.attachments.map((a, i) => (
+                          <li key={i}><a href={a.url} target="_blank" rel="noopener noreferrer">{a.name || a.url}</a></li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
                 </div>
               </>
             )}
@@ -146,8 +183,18 @@ function AssessmentOutreach() {
               <button className="btn-primary" onClick={handleSend} disabled={sending || selectedIds.length === 0}>
                 {sending ? 'Sending...' : `Send to ${selectedIds.length} Candidate${selectedIds.length !== 1 ? 's' : ''}`}
               </button>
+              <button className="btn-secondary" onClick={() => setShowTemplateManager(!showTemplateManager)}>
+                {showTemplateManager ? 'Hide Manager' : 'Manage Templates'}
+              </button>
             </div>
           </div>
+
+          {showTemplateManager && (
+            <div className="card" style={{ marginTop: 20, padding: 20 }}>
+              <h4 style={{ marginTop: 0, marginBottom: 15 }}>Email Template Manager</h4>
+              <TemplateManager onClose={() => setShowTemplateManager(false)} templates={templates} setTemplates={setTemplates} onTemplateSelect={(id) => setTemplateId(id)} />
+            </div>
+          )}
         </div>
       )}
     </>

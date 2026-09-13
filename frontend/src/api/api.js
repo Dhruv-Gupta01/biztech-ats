@@ -50,6 +50,19 @@ export async function scoreCandidate(id, payload) {
     body: JSON.stringify(payload)
   });
 }
+
+export async function analyzeCandidate(id) {
+  return request(`${BASE_URL}/candidates/${id}/analyze`, { method: 'POST' });
+}
+
+export async function analyzeCandidatesBulk(candidateIds = []) {
+  return request(`${BASE_URL}/candidates/analyze-bulk`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ candidateIds })
+  });
+}
+
 export async function recordInterviewStage(id, payload) 
 { return request(`${BASE_URL}/candidates/${id}/interview-stage`, { 
     method: 'POST', 
@@ -146,6 +159,8 @@ export async function updateCandidateRecord(id, payload) {
   });
 }
 
+export const updateCandidate = updateCandidateRecord;
+
 export async function assignCandidatesToSlack(candidateIds, slackMappingId, changedBy) {
   return request(`${BASE_URL}/slack-mappings/assign`, {
     method: 'POST',
@@ -157,11 +172,11 @@ export async function deleteCandidateRecord(id) {
   return request(`${BASE_URL}/candidates/${id}`, { method: 'DELETE' });
 }
 // --- Outreach ---
-export async function sendOutreachEmail(candidateIds, subject, body) {
+export async function sendOutreachEmail(candidateIds, subject, body, attachments) {
   return request(`${BASE_URL}/outreach/send`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ candidateIds, subject, body })
+    body: JSON.stringify({ candidateIds, subject, body, attachments })
   });
 }
 export async function fetchRetentionStatus() {
@@ -208,4 +223,57 @@ export async function fetchFormSyncStatus() {
 
 export async function runFormSyncNow() {
   return request(`${BASE_URL}/form-sync/run`, { method: 'POST' });
+}
+
+export async function fetchGoogleForms() {
+  return request(`${BASE_URL}/form-sync/forms`);
+}
+
+export async function createGoogleForm(form) {
+  return request(`${BASE_URL}/form-sync/forms`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(form)
+  });
+}
+
+export async function updateGoogleForm(id, form) {
+  return request(`${BASE_URL}/form-sync/forms/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(form)
+  });
+}
+
+export async function deleteGoogleForm(id) {
+  return request(`${BASE_URL}/form-sync/forms/${id}`, { method: 'DELETE' });
+}
+
+// --- Email Templates ---
+export async function fetchEmailTemplates() {
+  return request(`${BASE_URL}/email-templates`);
+}
+
+export async function createEmailTemplate(template) {
+  return request(`${BASE_URL}/email-templates`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(template)
+  });
+}
+
+export async function updateEmailTemplate(id, template) {
+  return request(`${BASE_URL}/email-templates/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(template)
+  });
+}
+
+export async function deleteEmailTemplate(id) {
+  return request(`${BASE_URL}/email-templates/${id}`, { method: 'DELETE' });
+}
+
+export async function fetchEmailTemplate(id) {
+  return request(`${BASE_URL}/email-templates/${id}`);
 }

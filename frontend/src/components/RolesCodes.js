@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { fetchRoles, createRole, deleteRole, fetchRetentionStatus, runRetentionNow } from '../api/api';
 
-const emptyForm = { code: '', title: '', department: '', description: '', empType: 'Full-Time', openings: 1 };
+const emptyForm = { code: '', title: '', department: '', description: '', empType: 'Full-Time', openings: 1, skills: '', minExperience: '', notNegotiable: false };
 
 function RolesCodes() {
   const [roles, setRoles] = useState([]);
@@ -92,9 +92,12 @@ function RolesCodes() {
             </select>
           </div>
           <div><input type="number" min="0" placeholder="Openings" value={form.openings} onChange={(e) => setForm({ ...form, openings: e.target.value })} /></div>
-          <div className="full">
-            <textarea placeholder="Description — used for the internal listing and posted as-is to LinkedIn/Naukri" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={4} />
-          </div>
+            <div className="full">
+              <textarea placeholder="Job Description" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={4} />
+            </div>
+            <div><input placeholder="Required Skills (comma-separated, e.g. React, Node.js)" value={form.skills} onChange={(e) => setForm({ ...form, skills: e.target.value })} /></div>
+            <div><input type="number" min="0" placeholder="Min Experience (yrs)" value={form.minExperience} onChange={(e) => setForm({ ...form, minExperience: e.target.value })} style={{ width: 110 }} /></div>
+            <div><input placeholder="Not negotiable (e.g. min 5 years experience)" value={form.notNegotiable || ''} onChange={(e) => setForm({ ...form, notNegotiable: e.target.value })} /></div>
           <div className="full"><button className="btn-primary" type="submit">+ Add Role</button></div>
         </form>
       </div>
@@ -104,7 +107,7 @@ function RolesCodes() {
           <p style={{ padding: 20, color: 'var(--text-500)' }}>Loading roles...</p>
         ) : (
           <table>
-            <thead><tr><th>Code</th><th>Title</th><th>Department</th><th>Type</th><th>Openings</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Code</th><th>Title</th><th>Department</th><th>Type</th><th>Skills</th><th>Min Exp</th><th>Not Negotiable</th><th>Openings</th><th>Status</th><th></th></tr></thead>
             <tbody>
               {roles.map((r) => (
                 <tr key={r.code}>
@@ -112,6 +115,9 @@ function RolesCodes() {
                   <td>{r.title}</td>
                   <td>{r.department}</td>
                   <td>{r.empType}</td>
+                  <td>{r.skills ? r.skills.join(', ') : ''}</td>
+                  <td>{r.minExperience || 0}</td>
+                  <td>{r.notNegotiable || '—'}</td>
                   <td>{r.openings}</td>
                   <td><span className="badge" style={{ background: r.status === 'Open' ? 'var(--green)' : r.status === 'On-Hold' ? 'var(--amber)' : '#6B7280' }}>{r.status}</span></td>
                   <td><button className="btn-secondary" onClick={() => removeRole(r.code)}>Remove</button></td>

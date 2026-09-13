@@ -1,18 +1,43 @@
 const Candidate = require('../models/Candidate');
 const Role = require('../models/Role');
 
-const STATUS_ORDER = ['Applied', 'Screened', 'Shortlisted', 'Interviewing', 'Rejected', 'Hired'];
+const STATUS_ORDER = [
+  'Naukri Response',
+  'Information Form',
+  'Interview 1',
+  'Interview 1 Shortlisted',
+  'Interview 2',
+  'Interview 2 Shortlisted',
+  'Assessment 1',
+  'Assessment 1 Shortlisted',
+  'Assessment 1 Passed',
+  'Assessment 2',
+  'Assessment 2 Shortlisted',
+  'Assessment 2 Passed',
+  'Final Round Shortlisted',
+  'Selected',
+  'Rejected'
+];
 const STATUS_COLORS = {
-  Applied: '#6B7280',
-  Screened: 'var(--blue)',
-  Shortlisted: 'var(--purple)',
-  Interviewing: 'var(--amber)',
-  Rejected: 'var(--red)',
-  Hired: 'var(--green)'
+  'Naukri Response': '#6B7280',
+  'Information Form': 'var(--blue)',
+  'Interview 1': 'var(--amber)',
+  'Interview 1 Shortlisted': 'var(--purple)',
+  'Interview 2': 'var(--amber)',
+  'Interview 2 Shortlisted': 'var(--purple)',
+  'Assessment 1': 'var(--blue)',
+  'Assessment 1 Shortlisted': 'var(--purple)',
+  'Assessment 1 Passed': 'var(--green)',
+  'Assessment 2': 'var(--blue)',
+  'Assessment 2 Shortlisted': 'var(--purple)',
+  'Assessment 2 Passed': 'var(--green)',
+  'Final Round Shortlisted': 'var(--green)',
+  Selected: 'var(--green)',
+  Rejected: 'var(--red)'
 };
 const SOURCE_PALETTE = ['var(--blue)', 'var(--purple)', 'var(--amber)', 'var(--green)', '#6B7280', 'var(--red)'];
 const STALE_DAYS_THRESHOLD = 7;
-const STALE_EXCLUDED_STATUSES = ['Hired', 'Rejected']; // candidates in a final state are never "stale"
+const STALE_EXCLUDED_STATUSES = ['Selected', 'Rejected']; // candidates in a final state are never "stale"
 
 // GET /api/dashboard/metrics?roleCode=BTA-ENG-01 (roleCode optional — scopes the whole dashboard to one role)
 // Computes everything the Dashboard tab shows, live from the Candidate/Role
@@ -39,7 +64,7 @@ exports.getMetrics = async (req, res) => {
     const avgSuitability = scored.length
       ? Number((scored.reduce((sum, c) => sum + c.score.suitabilityRating, 0) / scored.length).toFixed(1))
       : null;
-    const hiredCount = candidates.filter((c) => c.status === 'Hired').length;
+    const hiredCount = candidates.filter((c) => c.status === 'Selected').length;
 
     const overallFunnel = STATUS_ORDER.map((status) => ({
       label: status,

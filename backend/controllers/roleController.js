@@ -19,7 +19,7 @@ exports.getRoles = async (req, res) => {
 // back in the `linkedin` field so the UI can show a status without needing a second request.
 exports.createRole = async (req, res) => {
   try {
-    const { code, title, department, description, empType, openings } = req.body;
+    const { code, title, department, description, empType, openings, skills, minExperience, notNegotiable } = req.body;
     if (!code || !title || !department) {
       return res.status(400).json({ success: false, message: 'code, title and department are required.' });
     }
@@ -29,13 +29,18 @@ exports.createRole = async (req, res) => {
       return res.status(409).json({ success: false, message: `Role code "${code}" already exists.` });
     }
 
+    const skillsArray = Array.isArray(skills) ? skills : skills ? String(skills).split(',').map((s) => s.trim()).filter(Boolean) : [];
+
     const role = await Role.create({
       code: code.toUpperCase().trim(),
       title,
       department,
       description: description || '',
       empType,
-      openings: Number(openings) || 1
+      openings: Number(openings) || 1,
+      skills: skillsArray,
+      minExperience: Number(minExperience) || 0,
+      notNegotiable: notNegotiable != null ? String(notNegotiable) : ''
     });
 
     const [linkedin, naukri] = await Promise.all([
@@ -66,9 +71,17 @@ exports.createRole = async (req, res) => {
 // PATCH /api/roles/:code
 exports.updateRole = async (req, res) => {
   try {
+    const updates = { ...req.body };
+    if (updates.skills && !Array.isArray(updates.skills)) {
+      updates.skills = String(updates.skills).split(',').map((s) => s.trim()).filter(Boolean);
+    }
+    if (updates.minExperience !== undefined) updates.minExperience = Number(updates.minExperience);
+    if (updates.openings !== undefined) updates.openings = Number(updates.openings);
+    if (updates.notNegotiable !== undefined) updates.notNegotiable = Boolean(updates.notNegotiable);
+
     const role = await Role.findOneAndUpdate(
       { code: req.params.code.toUpperCase() },
-      req.body,
+      updates,
       { new: true, runValidators: true }
     );
     if (!role) return res.status(404).json({ success: false, message: 'Role not found.' });

@@ -99,6 +99,7 @@ exports.approveReview = async (req, res) => {
     review.resolvedCandidateId = candidate._id;
     review.resolvedBy = changedBy || 'Recruiter';
     review.resolvedAt = new Date();
+    review.rawData = {};
     await review.save();
 
     return res.status(200).json({ success: true, message: `${candidate.fullName} added to the candidate pool.`, data: { review, candidate } });
@@ -123,6 +124,7 @@ exports.dismissReview = async (req, res) => {
     review.status = 'dismissed';
     review.resolvedBy = changedBy || 'Recruiter';
     review.resolvedAt = new Date();
+    review.rawData = {};
     await review.save();
 
     return res.status(200).json({ success: true, message: 'Row dismissed.', data: review });

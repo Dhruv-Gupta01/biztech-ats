@@ -105,25 +105,27 @@ function CandidateProfileModal({ candidate, role, onClose }) {
           )}
 
           <div className="profile-section">
-            <h4>Google Form Submission</h4>
-            {hasSubmission ? (
-              <>
-                <p style={{ fontSize: 12, color: 'var(--text-500)', margin: '0 0 10px' }}>
-                  Submitted {new Date(submission.submittedAt).toLocaleString()} · matched by {submission.matchedEmail}
-                </p>
-                {Object.entries(submission.responses || {})
-                  .filter(([key]) => !NON_ANSWER_FIELDS.includes(key))
-                  .map(([key, value]) => (
-                    <div key={key} className="profile-answer">
-                      <strong>{key}</strong>
-                      {String(value) || '—'}
-                    </div>
-                  ))}
-              </>
-            ) : (
+            <h4>Google Form Submissions</h4>
+            {(c.formSubmissions || []).length === 0 ? (
               <p style={{ fontSize: 13, color: 'var(--text-500)' }}>
                 No form submission synced yet. Send this candidate an outreach email with the assessment form link, then use "Sync Form Responses" on the Candidate Pool page once they've submitted it.
               </p>
+            ) : (
+              (c.formSubmissions || []).map((submission, idx) => (
+                <div key={submission.formId + idx} style={{ marginBottom: 16, padding: 12, border: '1px solid var(--border)', borderRadius: 6 }}>
+                  <p style={{ fontSize: 12, color: 'var(--text-500)', margin: '0 0 10px' }}>
+                    <strong>{submission.formName || 'Form'}</strong> — Submitted {new Date(submission.submittedAt).toLocaleString()} · matched by {submission.matchedEmail}
+                  </p>
+                  {Object.entries(submission.responses || {})
+                    .filter(([key]) => !NON_ANSWER_FIELDS.includes(key))
+                    .map(([key, value]) => (
+                      <div key={key} className="profile-answer">
+                        <strong>{key}</strong>
+                        {String(value) || '—'}
+                      </div>
+                    ))}
+                </div>
+              ))
             )}
           </div>
 

@@ -74,6 +74,11 @@ function ImportReview() {
       const res = await approveImportReview(review._id, edits[review._id], 'Recruiter');
       setNotice(res.message);
       setReviews((prev) => prev.filter((r) => r._id !== review._id));
+      setEdits((prev) => {
+        const next = { ...prev };
+        delete next[review._id];
+        return next;
+      });
       setStatus((prev) => (prev ? { ...prev, pendingReviewCount: Math.max(0, prev.pendingReviewCount - 1) } : prev));
     } catch (err) {
       setRowErrors((prev) => ({ ...prev, [review._id]: err.data?.reasons || [err.message] }));
@@ -89,6 +94,11 @@ function ImportReview() {
     try {
       await dismissImportReview(review._id, 'Recruiter');
       setReviews((prev) => prev.filter((r) => r._id !== review._id));
+      setEdits((prev) => {
+        const next = { ...prev };
+        delete next[review._id];
+        return next;
+      });
       setStatus((prev) => (prev ? { ...prev, pendingReviewCount: Math.max(0, prev.pendingReviewCount - 1) } : prev));
     } catch (err) {
       setError(`Could not dismiss row: ${err.message}`);

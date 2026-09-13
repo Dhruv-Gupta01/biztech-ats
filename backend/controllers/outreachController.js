@@ -1,29 +1,31 @@
 const Candidate = require('../models/Candidate');
 const Role = require('../models/Role');
+const GoogleForm = require('../models/GoogleForm');
 const { sendOutreachEmails } = require('../services/emailService');
 
-// Builds a Google Form link with the candidate's email pre-filled into the
-// form's Email question, using Google Forms' own prefill URL parameter
-// (?entry.<id>=<value>). That's how formSyncService later matches a
-// submission back to this exact candidate. Returns '' if the form isn't
-// configured yet (GOOGLE_FORM_URL / GOOGLE_FORM_EMAIL_ENTRY_ID), so
-// {{formLink}} just renders blank in the email rather than broken.
-function buildFormLink(email) {
-  const baseUrl = process.env.GOOGLE_FORM_URL;
-  const entryId = process.env.GOOGLE_FORM_EMAIL_ENTRY_ID;
-  if (!baseUrl || !entryId) return '';
-  const separator = baseUrl.includes('?') ? '&' : '?';
-  return `${baseUrl}${separator}entry.${entryId}=${encodeURIComponent(email)}`;
+async function buildFormLink(email, roleCode) {
+  let form = null;
+  if (roleCode) {
+    form = await GoogleForm.findOne({ isActive: true, roleCode });
+  }
+  if (!form) {
+    form = await GoogleForm.findOne({ isActive: true });
+  }
+  if (!form) {
+    const baseUrl = process.env.GOOGLE_FORM_URL;
+    const entryId = process.env.GOOGLE_FORM_EMAIL_ENTRY_ID;
+    if (!baseUrl || !entryId) return '';
+    const separator = baseUrl.includes('?') ? '&' : '?';
+    return `${baseUrl}${separator}entry.${entryId}=${encodeURIComponent(email)}`;
+  }
+
+  const separator = form.formUrl.includes('?') ? '&' : '?';
+  return `${form.formUrl}${separator}entry.${form.formEmailEntryId}=${encodeURIComponent(email)}`;
 }
 
-// POST /api/outreach/send
-// Body: { candidateIds: [...], subject: "raw template with {{mergeFields}}", body: "raw template" }
-// Looks up each candidate + their role title, merges the template per-recipient,
-// and sends one individual email each via emailService. Never a single message
-// with everyone visible to each other.
 exports.sendOutreach = async (req, res) => {
   try {
-    const { candidateIds, subject, body } = req.body;
+    const { candidateIds, subject, body, attachments, formId } = req.body;
     if (!Array.isArray(candidateIds) || candidateIds.length === 0) {
       return res.status(400).json({ success: false, message: 'candidateIds must be a non-empty array.' });
     }
@@ -44,12 +46,20 @@ exports.sendOutreach = async (req, res) => {
       return r ? r.title : code;
     };
 
-    const recipients = candidates.map((c) => ({
-      email: c.email,
-      vars: { candidateName: c.fullName, roleTitle: roleTitle(c.roleCode), roleCode: c.roleCode, formLink: buildFormLink(c.email) }
-    }));
+    const recipients = [];
+    for (const c of candidates) {
+      recipients.push({
+        email: c.email,
+        vars: {
+          candidateName: c.fullName,
+          roleTitle: roleTitle(c.roleCode),
+          roleCode: c.roleCode,
+          formLink: await buildFormLink(c.email, c.roleCode)
+        }
+      });
+    }
 
-    const results = await sendOutreachEmails(recipients, subject, body);
+    const results = await sendOutreachEmails(recipients, subject, body, Array.isArray(attachments) ? attachments : []);
     const sentCount = results.filter((r) => r.sent).length;
     const failedCount = results.length - sentCount;
 

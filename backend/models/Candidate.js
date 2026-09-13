@@ -16,16 +16,34 @@ const candidateSchema = new mongoose.Schema({
   ctcExpected: { type: Number, default: 0 },
   noticePeriod: { type: String, default: '' }, // e.g. "30 days"
   skills: { type: [String], default: [] },
-  resumeUrl: { type: String, default: '' }, // required for /apply uploads; blank for CSV-imported candidates
+  resumeUrl: { type: String, default: '' },
+  resumeData: { type: Buffer, default: null },
+  resumeText: { type: String, default: '' },
   status: {
     type: String,
-    enum: ['Applied', 'Screened', 'Shortlisted', 'Interviewing', 'Rejected', 'Hired'],
-    default: 'Applied'
+    enum: [
+      'Naukri Response',
+      'Information Form',
+      'Interview 1',
+      'Interview 1 Shortlisted',
+      'Interview 2',
+      'Interview 2 Shortlisted',
+      'Assessment 1',
+      'Assessment 1 Shortlisted',
+      'Assessment 1 Passed',
+      'Assessment 2',
+      'Assessment 2 Shortlisted',
+      'Assessment 2 Passed',
+      'Final Round Shortlisted',
+      'Selected',
+      'Rejected'
+    ],
+    default: 'Naukri Response'
   },
   generalRemarks: { type: String, default: '' },
   assessmentRemarks: { type: String, default: '' },
   source: { type: String, default: 'Website' },
-  slackGroup: { type: String, default: '' },
+   slackGroup: { type: String, default: '' },
   // Tracks completed interview stages in order (SRD 3.9). Current stage =
   // role.interviewStages[interviewProgress.length]. Internal only — never
   // shown to candidates, per the SRD's explicit note that scorecards/stages
@@ -41,7 +59,11 @@ const candidateSchema = new mongoose.Schema({
   ],
   // Independent assessment status — distinct from the pipeline `status` above.
   // Tracks how the candidate is doing in evaluation specifically (SRD 3.8).
-  assessmentStatus: { type: String, enum: ['Not started', 'In progress', 'Selected', 'Not selected'], default: 'Not started' }, // Slack channel name the candidate was last routed to
+   assessmentStatus: { type: String, enum: ['Selected', 'Rejected', 'Not Appeared', 'Rescheduled', 'Not interested', 'Refered for other position'], default: 'Not interested' }, // Slack channel name the candidate was last routed to
+    cvScreening: { type: String, enum: ['', 'Select', 'Reject', 'Refered for other position'], default: '' },
+   interviewRounds: { type: mongoose.Schema.Types.Mixed, default: {} },
+   joiningDateTentative: { type: Date, default: null },
+   joiningDateConfirm: { type: Date, default: null },
   history: [
     {
       field: { type: String, required: true },
@@ -63,14 +85,18 @@ const candidateSchema = new mongoose.Schema({
   // Populated by the Google Form response sync (services/formSyncService.js):
   // outreach emails link to a Google Form pre-filled with the candidate's
   // email; a recruiter-triggered sync matches submissions in the form's
-  // response Sheet back to this candidate by that email. `responses` is the
-  // raw row (question title -> answer) so new form questions show up without
-  // a schema change. Null until a matching submission has been synced.
-  formSubmission: {
-    submittedAt: { type: Date, default: null },
-    matchedEmail: { type: String, default: '' },
-    responses: { type: mongoose.Schema.Types.Mixed, default: null }
-  },
+  // response Sheet back to this candidate by that email. `formSubmissions`
+  // is an array so multiple forms can be synced per candidate. Null until
+  // a matching submission has been synced.
+  formSubmissions: [
+    {
+      formId: { type: String, default: '' },
+      formName: { type: String, default: '' },
+      submittedAt: { type: Date, default: null },
+      matchedEmail: { type: String, default: '' },
+      responses: { type: mongoose.Schema.Types.Mixed, default: null }
+    }
+  ],
 
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }

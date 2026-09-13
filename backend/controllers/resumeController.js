@@ -1,4 +1,3 @@
-const fs = require('fs');
 const pdfParse = require('pdf-parse');
 const { SKILL_KEYWORDS } = require('../utils/skillKeywords');
 
@@ -46,7 +45,7 @@ exports.parseResume = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Resume PDF is required.' });
     }
 
-    const dataBuffer = fs.readFileSync(req.file.path);
+    const dataBuffer = req.file.buffer;
     const parsed = await pdfParse(dataBuffer);
     const text = parsed.text || '';
 

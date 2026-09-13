@@ -8,7 +8,9 @@ const links = [
   { id: 'apply', label: 'Application Form', icon: '＋' },
   { id: 'import', label: 'Import Review', icon: '⇩' },
   { id: 'roles', label: 'Roles & Codes', icon: '▤' },
-  { id: 'slack', label: 'Slack Groups', icon: '#' }
+  { id: 'slack', label: 'Slack Groups', icon: '#' },
+  { id: 'forms', label: 'Google Forms', icon: '📋' },
+  { id: 'roleCodeData', label: 'Role Code Data', icon: '📊' }
 ];
 
 function Sidebar({ view, setView }) {

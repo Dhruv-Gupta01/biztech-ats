@@ -4,20 +4,50 @@ import CandidateProfileModal from './CandidateProfileModal';
 import { useAuth } from '../auth/AuthContext';
 import {
   fetchCandidates, scoreCandidate, bulkImportCandidates, fetchSlackMappings, assignCandidatesToSlack,
-  deleteCandidateRecord, fetchRoles, recordInterviewStage, fetchFormSyncStatus, runFormSyncNow
+  deleteCandidateRecord, fetchRoles, recordInterviewStage, fetchFormSyncStatus, runFormSyncNow, analyzeCandidatesBulk,
+  updateCandidate
 } from '../api/api';
 import { calculateSuitability, suggestDecision } from '../utils/scoring';
 
 const typeLabel = (t) => (t === 'Contract' ? 'Contractual' : t === 'Part-Time' ? 'Part Time' : t === 'Internship' ? 'Internship' : 'Full Time');
 const money = (n) => (n ? `₹${(n / 100000).toFixed(1)}L` : '—');
 
+const STATUS_OPTIONS = [
+  'Naukri Response',
+  'Information Form',
+  'Interview 1',
+  'Interview 1 Shortlisted',
+  'Interview 2',
+  'Interview 2 Shortlisted',
+  'Assessment 1',
+  'Assessment 1 Shortlisted',
+  'Assessment 1 Passed',
+  'Assessment 2',
+  'Assessment 2 Shortlisted',
+  'Assessment 2 Passed',
+  'Final Round Shortlisted',
+  'Selected',
+  'Rejected'
+];
+
+const ASSESSMENT_STATUSES = ['Selected', 'Rejected', 'Not Appeared', 'Rescheduled', 'Not interested', 'Refered for other position'];
+const INTERVIEW_OPTIONS = ['Selected', 'Rejected', 'Not Appeared', 'Rescheduled', 'Not interested', 'Refered for other position'];
+const CV_SCREENING_OPTIONS = ['Selected', 'Rejected', 'Refered for other position'];
+
 const SAMPLE_CSV = `fullName,email,phone,location,roleCode,employmentType,yearsOfExperience,ctcCurrent,ctcExpected,noticePeriod,skills,status,source
-Amit Kumar,amit.kumar@example.com,9812345670,Delhi,BTA-ENG-01,Full-Time,3,800000,1100000,30 days,React;Node.js;MongoDB,Applied,CSV Import
-Sara Khan,sara.khan@example.com,9812345671,Pune,BTA-DS-01,Contract,5,1500000,1900000,15 days,Python;SQL,Screened,CSV Import
+Amit Kumar,amit.kumar@example.com,9812345670,Delhi,BTA-ENG-01,Full-Time,3,800000,1100000,30 days,React;Node.js;MongoDB,Information Form,CSV Import
+Sara Khan,sara.khan@example.com,9812345671,Pune,BTA-DS-01,Contract,5,1500000,1900000,15 days,Python;SQL,Interview 1,CSV Import
 `;
 
 function assessmentBadgeClass(assessmentStatus) {
-  const map = { 'Not started': 'badge-applied', 'In progress': 'badge-interviewing', 'Selected': 'badge-hired', 'Not selected': 'badge-rejected' };
+  const map = {
+    'Selected': 'badge-hired',
+    'Rejected': 'badge-rejected',
+    'Not Appeared': 'badge-rejected',
+    'Rescheduled': 'badge-interviewing',
+    'Not interested': 'badge-rejected',
+    'Refered for other position': 'badge-applied'
+  };
   return 'badge ' + (map[assessmentStatus] || 'badge-applied');
 }
 
@@ -45,8 +75,8 @@ function CandidatePool() {
   const [query, setQuery] = useState('');
 
   const [scoringId, setScoringId] = useState(null);
-  const [scoreForm, setScoreForm] = useState({ skillScore: '', experienceScore: '', remarks: '', decision: 'Screened', assessmentStatus: 'In progress' });
-  const [scoreError, setScoreError] = useState('');
+  const [analyzerScores, setAnalyzerScores] = useState({});
+  const [analyzing, setAnalyzing] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const csvInputRef = useRef(null);
@@ -57,14 +87,69 @@ function CandidatePool() {
   const [slackAssigning, setSlackAssigning] = useState(false);
   const [slackResult, setSlackResult] = useState(null);
 
-  const [historyOpenId, setHistoryOpenId] = useState(null);
-  const [deleteError, setDeleteError] = useState('');
+   const [deleteError, setDeleteError] = useState('');
 
-  // Interview stages panel
-  const [stagesOpenId, setStagesOpenId] = useState(null);
-  const [stageForm, setStageForm] = useState({ interviewer: '', rating: '', feedback: '' });
-  const [stageError, setStageError] = useState('');
-  const [stageSubmitting, setStageSubmitting] = useState(false);
+   const [stagesOpenId, setStagesOpenId] = useState(null);
+   const [stageError, setStageError] = useState('');
+   const [stageForm, setStageForm] = useState({ interviewer: '', rating: '', feedback: '' });
+   const [stageSubmitting, setStageSubmitting] = useState(false);
+
+  const [interviewRounds, setInterviewRounds] = useState(['Interview']);
+  const [cvScreeningDraft, setCvScreeningDraft] = useState({});
+  const [roundDraft, setRoundDraft] = useState({});
+  const [referToOtherRole, setReferToOtherRole] = useState({}); // { [candidateId]: roleCode }
+
+  const addInterviewRound = () => {
+    const nextNum = interviewRounds.length + 1;
+    setInterviewRounds((prev) => [...prev, `Interview Round ${nextNum}`]);
+  };
+
+  const removeInterviewRound = (roundName) => {
+    setInterviewRounds((prev) => prev.filter((r) => r !== roundName));
+  };
+
+  const saveCvScreening = async (id, value) => {
+    try {
+      await updateCandidate(id, { cvScreening: value || '', changedBy: user?.fullName });
+      setCandidates((prev) => prev.map((c) => (c._id === id ? { ...c, cvScreening: value || '' } : c)));
+    } catch (err) {
+      console.error('Failed to save CV screening:', err);
+    }
+  };
+
+  const saveAssessmentStatus = async (id, status) => {
+    try {
+      const res = await updateCandidate(id, { assessmentStatus: status, changedBy: user?.fullName });
+      setCandidates((prev) => prev.map((c) => (c._id === id ? res.data : c)));
+    } catch (err) {
+      console.error('Failed to save assessment status:', err);
+    }
+  };
+
+  const saveInterviewRound = async (id, roundName, value) => {
+      try {
+      const candidate = candidates.find((x) => x._id === id);
+      const updated = candidate ? (candidate.interviewRounds || {}) : {};
+      await updateCandidate(id, { interviewRounds: { ...updated, [roundName]: value }, changedBy: user?.fullName });
+      setCandidates((prev) => prev.map((c) => (c._id === id ? { ...c, interviewRounds: { ...c.interviewRounds, [roundName]: value } } : c)));
+    } catch (err) {
+      console.error('Failed to save interview round:', err);
+    }
+  };
+
+  const handleReferToOtherRole = async (candidateId, newRoleCode) => {
+    if (!newRoleCode) return;
+    try {
+      const res = await updateCandidate(candidateId, { roleCode: newRoleCode.toUpperCase().trim(), changedBy: user?.fullName });
+      setCandidates((prev) => prev.map((c) => (c._id === candidateId ? { ...c, ...res.data } : c)));
+      setReferToOtherRole((prev) => ({ ...prev, [candidateId]: newRoleCode.toUpperCase().trim() }));
+    } catch (err) {
+      console.error('Failed to update candidate role code:', err);
+    }
+  };
+
+  // Joining date editing
+  const [editingDate, setEditingDate] = useState({});
 
   // Candidate profile modal (opened by clicking a name)
   const [profileCandidate, setProfileCandidate] = useState(null);
@@ -77,7 +162,15 @@ function CandidatePool() {
   const loadCandidates = () => {
     setLoading(true);
     fetchCandidates(filters)
-      .then((res) => { setCandidates(res.data); setLoadError(''); })
+      .then((res) => {
+        setCandidates(res.data);
+        setLoadError('');
+        setProfileCandidate((prev) => {
+          if (!prev) return prev;
+          const updated = res.data.find((c) => c._id === prev._id);
+          return updated || prev;
+        });
+      })
       .catch((err) => { console.error('[CandidatePool] fetchCandidates failed:', err); setLoadError(`Could not load candidates: ${err.message}`); })
       .finally(() => setLoading(false));
   };
@@ -111,7 +204,14 @@ function CandidatePool() {
     setFormSyncResult(null);
     try {
       const res = await runFormSyncNow();
-      setFormSyncResult({ ok: res.data.status !== 'failed', message: res.message });
+      const ok = res.data && res.data.status !== 'failed';
+      const details = res.data ? [
+        `Forms processed: ${res.data.formsProcessed || 0}`,
+        `Matched: ${res.data.totalMatched || 0}`,
+        `Unmatched: ${res.data.totalUnmatched || 0}`,
+        ...(res.data.formResults || []).map(fr => `- ${fr.form}: ${fr.status}${fr.matchedCount !== undefined ? ` (${fr.matchedCount} matched)` : ''}${fr.reason ? ` — ${fr.reason}` : ''}`)
+      ].join('\n') : '';
+      setFormSyncResult({ ok, message: res.message, details });
       loadFormSyncStatus();
       loadCandidates(); // pick up any newly-attached formSubmission data
     } catch (err) {
@@ -121,7 +221,7 @@ function CandidatePool() {
     }
   };
 
-  const roleCodes = useMemo(() => [...new Set(candidates.map((c) => c.roleCode))].sort(), [candidates]);
+  const roleCodes = useMemo(() => roles.map((r) => r.code).sort(), [roles]);
 
   // employmentType and free-text search stay client-side on top of the server-filtered set.
   const filtered = useMemo(() => {
@@ -129,7 +229,13 @@ function CandidatePool() {
       if (filters.employmentType && c.employmentType !== filters.employmentType) return false;
       if (query) {
         const q = query.toLowerCase();
-        const haystack = [c.fullName, c.location, ...(c.skills || [])].join(' ').toLowerCase();
+        const haystack = [
+          c.fullName, c.email, c.phone, c.location, c.roleCode, c.employmentType, c.source,
+          ...(c.skills || []),
+          String(c.yearsOfExperience || ''),
+          String(c.ctcCurrent || ''),
+          String(c.ctcExpected || '')
+        ].join(' ').toLowerCase();
         if (!haystack.includes(q)) return false;
       }
       return true;
@@ -210,43 +316,46 @@ function CandidatePool() {
     } catch (err) {
       setDeleteError(`Could not remove ${c.fullName}: ${err.message}`);
     }
-  };
+   };
 
-  const openScoreForm = (c) => {
-    setScoreError('');
-    setScoringId(c._id);
-    setScoreForm({
-      skillScore: c.score?.skillScore ?? '',
-      experienceScore: c.score?.experienceScore ?? '',
-      remarks: c.assessmentRemarks || '',
-      decision: c.status && c.status !== 'Applied' ? c.status : 'Screened',
-      assessmentStatus: c.assessmentStatus || 'In progress'
-    });
-  };
-
-  const liveRating = calculateSuitability(Number(scoreForm.skillScore) || null, Number(scoreForm.experienceScore) || null);
-
-  const saveScore = async (id) => {
-    setScoreError('');
+  const runBulkAnalyze = async () => {
+    setAnalyzing(true);
     try {
-      const res = await scoreCandidate(id, {
-        skillScore: Number(scoreForm.skillScore),
-        experienceScore: Number(scoreForm.experienceScore),
-        assessmentRemarks: scoreForm.remarks,
-        status: scoreForm.decision,
-        assessmentStatus: scoreForm.assessmentStatus,
-        changedBy: user?.fullName
-      });
-      setCandidates((prev) => prev.map((c) => (c._id === id ? res.data : c)));
-      setScoringId(null);
+      const ids = selectedIds.length > 0 ? selectedIds : [];
+      const res = await analyzeCandidatesBulk(ids);
+      if (res.success && res.data) {
+        const scoreMap = {};
+        res.data.forEach((item) => {
+          scoreMap[item.candidateId] = { score: item.score, breakdown: item.breakdown };
+        });
+        setAnalyzerScores((prev) => ({ ...prev, ...scoreMap }));
+      }
     } catch (err) {
-      setScoreError(`Could not save score: ${err.message}`);
+      console.error('Bulk resume analysis failed:', err);
+    } finally {
+      setAnalyzing(false);
     }
   };
 
   const roleStages = (roleCode) => {
     const role = roles.find((r) => r.code === roleCode);
     return role ? role.interviewStages : ['Recruiter Screen', 'Technical', 'Hiring Manager'];
+  };
+
+  const startEditingDate = (id, field) => {
+    setEditingDate({ candidateId: id, field });
+  };
+
+  const saveJoiningDate = async (id, field, dateValue) => {
+    const date = dateValue ? new Date(dateValue) : null;
+    try {
+      await updateCandidate(id, { [field]: date, changedBy: user?.fullName });
+      setCandidates((prev) => prev.map((c) => (c._id === id ? { ...c, [field]: date } : c)));
+    } catch (err) {
+      console.error('Failed to save joining date:', err);
+    } finally {
+      setEditingDate({});
+    }
   };
 
   const openStagesPanel = (c) => {
@@ -298,7 +407,14 @@ function CandidatePool() {
       )}
 
       {slackResult && (<div className={`alert ${slackResult.ok ? 'alert-success' : 'alert-error'}`}>{slackResult.ok ? '✅' : '⚠️'} {slackResult.message}</div>)}
-      {formSyncResult && (<div className={`alert ${formSyncResult.ok ? 'alert-success' : 'alert-error'}`}>{formSyncResult.ok ? '✅' : '⚠️'} {formSyncResult.message}</div>)}
+      {formSyncResult && (
+        <div className={`alert ${formSyncResult.ok ? 'alert-success' : 'alert-error'}`}>
+          {formSyncResult.ok ? '✅' : '⚠️'} {formSyncResult.message}
+          {formSyncResult.details && (
+            <pre style={{ margin: '8px 0 0', padding: 10, background: 'rgba(0,0,0,0.03)', borderRadius: 4, fontSize: 12, whiteSpace: 'pre-wrap' }}>{formSyncResult.details}</pre>
+          )}
+        </div>
+      )}
       {deleteError && <div className="alert alert-error">⚠️ {deleteError}</div>}
 
       <div className="filters-row">
@@ -315,7 +431,7 @@ function CandidatePool() {
         </select>
         <select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}>
           <option value="">All statuses</option>
-          {['Applied', 'Screened', 'Shortlisted', 'Interviewing', 'Rejected', 'Hired'].map((s) => <option key={s}>{s}</option>)}
+          {STATUS_OPTIONS.map((s) => <option key={s}>{s}</option>)}
         </select>
         <select value={filters.source} onChange={(e) => setFilters({ ...filters, source: e.target.value })}>
           <option value="">All sources</option>
@@ -323,12 +439,13 @@ function CandidatePool() {
         </select>
         <input type="number" min="0" placeholder="Min Exp (yrs)" value={filters.minExperience} onChange={(e) => setFilters({ ...filters, minExperience: e.target.value })} style={{ width: 110 }} />
         <input type="number" min="0" placeholder="Max Exp (yrs)" value={filters.maxExperience} onChange={(e) => setFilters({ ...filters, maxExperience: e.target.value })} style={{ width: 110 }} />
-        <input placeholder="Filter by name, location, skill" value={query} onChange={(e) => setQuery(e.target.value)} style={{ minWidth: 220 }} />
+        <input placeholder="Search name, email, phone, location, skills, roleCode, employmentType, experience, CTC, source" value={query} onChange={(e) => setQuery(e.target.value)} style={{ minWidth: 220 }} />
         <button className="btn-secondary" onClick={loadCandidates}>Refresh</button>
         <button className="btn-secondary" onClick={exportCSV}>Export CSV</button>
         <button className="btn-secondary" onClick={downloadSampleCSV}>Download Sample CSV</button>
         <input ref={csvInputRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleImportFile} />
         <button className="btn-primary" onClick={triggerImport} disabled={importing}>{importing ? 'Importing...' : '⭱ Import CSV'}</button>
+        <button className="btn-secondary" onClick={runBulkAnalyze} disabled={analyzing || !filters.roleCode || selectedIds.length === 0} title={!filters.roleCode ? 'Select a specific Role Code' : ''}>{analyzing ? 'Analyzing...' : 'Resume Analyzer'}</button>
       </div>
 
       <div className="filters-row" style={{ alignItems: 'center' }}>
@@ -359,8 +476,30 @@ function CandidatePool() {
               <tr>
                 <th><input type="checkbox" onChange={toggleSelectAllFiltered} checked={filtered.length > 0 && filtered.every((c) => selectedIds.includes(c._id))} /></th>
                 <th>Candidate</th><th>Role Code</th><th>Type</th><th>Location</th>
-                <th>CTC (Current → Expected)</th><th>Notice Period</th><th>Status</th>
-                <th>Assessment Status</th><th>Slack Group</th><th></th><th></th><th></th>
+                <th>Current CTC</th><th>Expected CTC</th><th>Notice Period</th>
+                <th>Joining Date (Tentative)</th><th>Joining Date (Confirm)</th>
+                <th>CV Screening</th>
+                {interviewRounds.map((round) => (
+                  <th key={round}>
+                    {round}{' '}
+                    {interviewRounds.length > 1 && (
+                      <button
+                        onClick={() => removeInterviewRound(round)}
+                        style={{ fontSize: 10, padding: '2px 5px', background: 'var(--red)', color: 'white', border: 'none', borderRadius: 3, cursor: 'pointer' }}
+                        title={`Remove ${round}`}
+                      >×</button>
+                    )}
+                  </th>
+                ))}
+                <th>Analyzer Score</th><th>Status</th><th>Assessment Status</th>
+                <th>Slack Group</th>
+              </tr>
+              <tr>
+                <th colSpan="10"></th>
+                <th colSpan={interviewRounds.length + 2} style={{ padding: 0, borderBottom: '1px solid var(--border)', textAlign: 'center', fontSize: 11, color: 'var(--text-500)' }}>
+                  + Add Interview Round
+                  <button onClick={addInterviewRound} style={{ fontSize: 11, padding: '2px 8px', background: 'var(--primary)', color: 'black', border: '2px solid black', borderRadius: 4, cursor: 'pointer', marginLeft: 6 }}>+</button>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -370,125 +509,111 @@ function CandidatePool() {
                 const nextStage = stages[completed.length];
                 return (
                   <React.Fragment key={c._id}>
-                    <tr>
-                      <td><input type="checkbox" checked={selectedIds.includes(c._id)} onChange={() => toggleSelected(c._id)} /></td>
-                      <td className="name-cell">
-                        <button className="name-link" onClick={() => setProfileCandidate(c)}><strong>{c.fullName}</strong></button>
-                        <br /><small>{c.email}</small>
-                      </td>
-                      <td>{c.roleCode}</td>
-                      <td>{typeLabel(c.employmentType)}</td>
-                      <td>{c.location || '—'}</td>
-                      <td>{money(c.ctcCurrent)} → {money(c.ctcExpected)}</td>
-                      <td>{c.noticePeriod || '—'}</td>
-                      <td><StatusBadge status={c.status} /></td>
-                      <td>
-                        <button className={assessmentBadgeClass(c.assessmentStatus)} style={{ border: 'none' }} onClick={() => openScoreForm(c)}>
-                          {c.assessmentStatus || 'Not started'}
-                        </button>
-                        {c.score?.suitabilityRating != null && (
-                          <div style={{ fontSize: 11.5, color: 'var(--text-500)', marginTop: 4 }}>Score: {c.score.suitabilityRating}</div>
-                        )}
-                      </td>
-                      <td>{c.slackGroup || '—'}</td>
-                      <td>
-                        <button className="btn-secondary" onClick={() => openStagesPanel(c)}>
-                          Interview {completed.length}/{stages.length}
-                        </button>
-                      </td>
-                      <td><button className="btn-secondary" onClick={() => setHistoryOpenId(historyOpenId === c._id ? null : c._id)}>History{c.history?.length ? ` (${c.history.length})` : ''}</button></td>
-                      <td><button className="btn-secondary" onClick={() => removeCandidate(c)}>Remove</button></td>
-                    </tr>
-                    {scoringId === c._id && (
-                      <tr className="score-row">
-                        <td colSpan="13">
-                          <div className="score-form" style={{ flexWrap: 'wrap' }}>
-                            {scoreError && <div className="alert alert-error" style={{ margin: 0 }}>{scoreError}</div>}
-                            <input type="number" min="0" max="10" placeholder="Skill Score (0-10)" value={scoreForm.skillScore}
-                              onChange={(e) => setScoreForm({ ...scoreForm, skillScore: e.target.value })} />
-                            <input type="number" min="0" max="10" placeholder="Experience Score (0-10)" value={scoreForm.experienceScore}
-                              onChange={(e) => setScoreForm({ ...scoreForm, experienceScore: e.target.value })} />
-                            <span style={{ fontSize: 12.5, fontWeight: 600, alignSelf: 'center' }}>
-                              Suitability: {liveRating ?? '—'} {liveRating != null && `(suggests: ${suggestDecision(liveRating)})`}
+                     <tr>
+                       <td><input type="checkbox" checked={selectedIds.includes(c._id)} onChange={() => toggleSelected(c._id)} /></td>
+                       <td className="name-cell">
+                         <button className="name-link" onClick={() => setProfileCandidate(c)}><strong>{c.fullName}</strong></button>
+                         <br /><small>{c.email}</small>
+                       </td>
+                       <td>{c.roleCode}</td>
+                       <td>{typeLabel(c.employmentType)}</td>
+                       <td>{c.location || '—'}</td>
+                       <td>{money(c.ctcCurrent)}</td>
+                       <td>{money(c.ctcExpected)}</td>
+                       <td>{c.noticePeriod || '—'}</td>
+                        <td>
+                          {editingDate.candidateId === c._id && editingDate.field === 'joiningDateTentative' ? (
+                            <input
+                              type="date"
+                              defaultValue={c.joiningDateTentative ? new Date(c.joiningDateTentative).toISOString().slice(0, 10) : ''}
+                              onBlur={(e) => saveJoiningDate(c._id, 'joiningDateTentative', e.target.value)}
+                              autoFocus
+                              style={{ width: '140px', padding: '4px 6px', fontSize: 12 }}
+                            />
+                          ) : (
+                            <button className="btn-secondary" onClick={() => startEditingDate(c._id, 'joiningDateTentative')} style={{ fontSize: 11.5, padding: '4px 8px' }}>
+                              {c.joiningDateTentative ? new Date(c.joiningDateTentative).toLocaleDateString() : 'Set date'}
+                            </button>
+                          )}
+                        </td>
+                   <td>
+                          {editingDate.candidateId === c._id && editingDate.field === 'joiningDateConfirm' ? (
+                            <input
+                              type="date"
+                              defaultValue={c.joiningDateConfirm ? new Date(c.joiningDateConfirm).toISOString().slice(0, 10) : ''}
+                              onBlur={(e) => saveJoiningDate(c._id, 'joiningDateConfirm', e.target.value)}
+                              autoFocus
+                              style={{ width: '140px', padding: '4px 6px', fontSize: 12 }}
+                            />
+                          ) : (
+                            <button className="btn-secondary" onClick={() => startEditingDate(c._id, 'joiningDateConfirm')} style={{ fontSize: 11.5, padding: '4px 8px' }}>
+                              {c.joiningDateConfirm ? new Date(c.joiningDateConfirm).toLocaleDateString() : 'Set date'}
+                            </button>
+                          )}
+                        </td>
+                        <td>
+                          <select
+                            value={cvScreeningDraft[c._id] ?? c.cvScreening ?? ''}
+                            onChange={(e) => {
+                              const val = e.target.value || '';
+                              setCvScreeningDraft((prev) => ({ ...prev, [c._id]: val }));
+                              saveCvScreening(c._id, val);
+                            }}
+                            style={{ padding: '2px 6px', fontSize: 12, borderRadius: 4, border: '1px solid var(--border)' }}
+                          >
+                            <option value="">—</option>
+                            {CV_SCREENING_OPTIONS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                          </select>
+                        </td>
+                        {interviewRounds.map((round) => (
+                          <td key={round}>
+                            <select
+                              value={(c.interviewRounds || {})[round] || ''}
+                              onChange={(e) => saveInterviewRound(c._id, round, e.target.value)}
+                              style={{ padding: '2px 6px', fontSize: 11, borderRadius: 4, border: '1px solid var(--border)', minWidth: 120 }}
+                            >
+                              <option value="">Not set</option>
+                              {INTERVIEW_OPTIONS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                            </select>
+                            {(c.interviewRounds || {})[round] === 'Refered for other position' && (
+                              <select
+                                value={referToOtherRole[c._id] || ''}
+                                onChange={(e) => handleReferToOtherRole(c._id, e.target.value)}
+                                style={{ padding: '2px 6px', fontSize: 11, borderRadius: 4, border: '1px solid var(--border)', minWidth: 100, marginTop: 4 }}
+                              >
+                                <option value="">Select role...</option>
+                                {roleCodes.filter((code) => code !== c.roleCode).map((code) => <option key={code} value={code}>{code}</option>)}
+                              </select>
+                            )}
+                          </td>
+                        ))}
+                        <td>
+                          {analyzerScores[c._id] ? (
+                            <span style={{ fontWeight: 600, color: analyzerScores[c._id].score >= 7 ? 'var(--green)' : analyzerScores[c._id].score >= 4 ? 'var(--amber)' : 'var(--red)' }}>
+                              {analyzerScores[c._id].score}/10
                             </span>
-                            <label style={{ fontSize: 11.5, color: 'var(--text-500)', alignSelf: 'center' }}>Pipeline stage:</label>
-                            <select value={scoreForm.decision} onChange={(e) => setScoreForm({ ...scoreForm, decision: e.target.value })}>
-                              {['Screened', 'Shortlisted', 'Interviewing', 'Rejected', 'Hired'].map((s) => <option key={s}>{s}</option>)}
-                            </select>
-                            <label style={{ fontSize: 11.5, color: 'var(--text-500)', alignSelf: 'center' }}>Assessment status:</label>
-                            <select value={scoreForm.assessmentStatus} onChange={(e) => setScoreForm({ ...scoreForm, assessmentStatus: e.target.value })}>
-                              {['Not started', 'In progress', 'Selected', 'Not selected'].map((s) => <option key={s}>{s}</option>)}
-                            </select>
-                            <input placeholder="Assessment remarks" value={scoreForm.remarks}
-                              onChange={(e) => setScoreForm({ ...scoreForm, remarks: e.target.value })} style={{ minWidth: 220 }} />
-                            <button className="btn-primary" onClick={() => saveScore(c._id)}>Save</button>
-                            <button className="btn-secondary" onClick={() => setScoringId(null)}>Cancel</button>
-                          </div>
+                          ) : (
+                            <span style={{ color: 'var(--text-500)', fontSize: 12 }}>—</span>
+                          )}
                         </td>
-                      </tr>
-                    )}
-                    {stagesOpenId === c._id && (
-                      <tr className="score-row">
-                        <td colSpan="13">
-                          <div style={{ padding: '10px 4px' }}>
-                            <strong style={{ fontSize: 12.5 }}>Interview Stages — {c.roleCode}</strong>
-                            <ul style={{ margin: '8px 0', paddingLeft: 18 }}>
-                              {stages.map((stageName, i) => {
-                                const done = completed[i];
-                                return (
-                                  <li key={stageName} style={{ fontSize: 12.5, marginBottom: 4 }}>
-                                    {done ? (
-                                      <>✅ <strong>{stageName}</strong> — rating {done.rating ?? '—'}/5, interviewer: {done.interviewer || '—'}
-                                        {done.feedback && <> — "{done.feedback}"</>} ({new Date(done.completedAt).toLocaleDateString()})</>
-                                    ) : (
-                                      <>⬜ <strong>{stageName}</strong> {i === completed.length ? '(next up)' : '(pending)'}</>
-                                    )}
-                                  </li>
-                                );
-                              })}
-                            </ul>
-                            {nextStage ? (
-                              <div className="score-form" style={{ flexWrap: 'wrap' }}>
-                                {stageError && <div className="alert alert-error" style={{ margin: 0 }}>{stageError}</div>}
-                                <input placeholder="Interviewer name" value={stageForm.interviewer} onChange={(e) => setStageForm({ ...stageForm, interviewer: e.target.value })} />
-                                <input type="number" min="1" max="5" placeholder="Rating (1-5)" value={stageForm.rating} onChange={(e) => setStageForm({ ...stageForm, rating: e.target.value })} style={{ width: 110 }} />
-                                <input placeholder={`Feedback for "${nextStage}"`} value={stageForm.feedback} onChange={(e) => setStageForm({ ...stageForm, feedback: e.target.value })} style={{ minWidth: 220 }} />
-                                <button className="btn-primary" onClick={() => submitStage(c)} disabled={stageSubmitting}>
-                                  {stageSubmitting ? 'Saving...' : `Complete "${nextStage}"`}
-                                </button>
-                              </div>
-                            ) : (
-                              <p style={{ fontSize: 12.5, color: 'var(--text-500)' }}>All stages completed for this role.</p>
-                            )}
-                          </div>
+                        <td><StatusBadge status={c.status} /></td>
+                        <td>
+                          <select
+                            value={c.assessmentStatus || ''}
+                            onChange={(e) => saveAssessmentStatus(c._id, e.target.value)}
+                            className={assessmentBadgeClass(c.assessmentStatus)}
+                            style={{ border: '1px solid var(--border)', background: 'transparent', padding: '2px 6px', fontSize: 12, cursor: 'pointer', borderRadius: 4, minWidth: 140, color: 'var(--text-900)' }}
+                          >
+                            {ASSESSMENT_STATUSES.map((s) => <option key={s}>{s}</option>)}
+                          </select>
                         </td>
+                        <td>{c.slackGroup || '—'}</td>
                       </tr>
-                    )}
-                    {historyOpenId === c._id && (
-                      <tr className="score-row">
-                        <td colSpan="13">
-                          <div style={{ padding: '10px 4px' }}>
-                            <strong style={{ fontSize: 12.5 }}>Change history</strong>
-                            {(!c.history || c.history.length === 0) ? (
-                              <p style={{ fontSize: 12.5, color: 'var(--text-500)', margin: '6px 0 0' }}>No changes logged yet.</p>
-                            ) : (
-                              <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
-                                {[...c.history].reverse().map((h, i) => (
-                                  <li key={i} style={{ fontSize: 12.5, marginBottom: 3 }}>
-                                    <strong>{h.field}</strong>: "{String(h.oldValue) || '—'}" → "{String(h.newValue)}" — {h.changedBy} · {new Date(h.changedAt).toLocaleString()}
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
-                );
-              })}
-            </tbody>
-          </table>
+                   </React.Fragment>
+                 );
+               })}
+             </tbody>
+           </table>
         )}
         {!loading && filtered.length === 0 && <p style={{ padding: 20, color: 'var(--text-500)' }}>No candidates match these filters.</p>}
       </div>

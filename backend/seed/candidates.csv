@@ -1,0 +1,7 @@
+Full Name,Email,Phone,Location,Role Code,Employment Type,Years of Experience,Notice Period,Current CTC,Expected CTC,Skills,Status,Source
+Aarav Sharma,aarav.sharma92@example.com,+919876543210,Bangalore,BTA-ENG-04,Full-Time,5.5,30 Days,1800000,2400000,Python;Django;AWS;PostgreSQL;Docker;Microservices,Naukri Response,CSV Import
+Priya Patel,priya.patel.tech@example.com,+919812345678,Mumbai,BTA-ENG-02,Full-Time,3.0,15 Days,1200000,1600000,React;TypeScript;Next.js;Redux;Tailwind CSS;GraphQL,Information Form,CSV Import
+Rohan Gupta,rohan.gupta.dev@example.com,+919711122334,Delhi NCR,BTA-ENG-04,Contract,6.0,Immediate,2000000,2600000,Java;Spring Boot;Kubernetes;Kafka;CI/CD;MySQL,Interview 1,CSV Import
+Sneha Reddy,sneha.reddy.data@example.com,+919654321098,Hyderabad,BTA-DATA-01,Full-Time,4.0,60 Days,1500000,2000000,Python;PySpark;SQL;Tableau;Airflow;Snowflake,Interview 1 Shortlisted,CSV Import
+Vikram Malhotra,vikram.malhotra88@example.com,+919988776655,Pune,BTA-ENG-05,Full-Time,8.0,90 Days,2800000,3500000,System Design;Go;Distributed Systems;Redis;GCP;Kubernetes,Interview 2,CSV Import
+Ananya Iyer,ananya.iyer.intern@example.com,+919543210987,Chennai,BTA-ENG-01,Internship,0.5,Immediate,300000,600000,Python;Data Structures;C++;HTML/CSS;JavaScript;Git,Assessment 1,CSV Import

@@ -24,9 +24,18 @@ function fillTemplate(str, vars) {
   return str.replace(/{{(.*?)}}/g, (_, key) => vars[key.trim()] || `{{${key.trim()}}}`);
 }
 
+function buildAttachmentLinks(attachments) {
+  if (!Array.isArray(attachments) || attachments.length === 0) return '';
+  const links = attachments
+    .filter((a) => a && a.url)
+    .map((a) => `- ${a.name || a.url}: ${a.url}`);
+  if (links.length === 0) return '';
+  return `\n\nAttachments:\n${links.join('\n')}`;
+}
+
 // Sends one personalized email per candidate. Returns a per-recipient result
 // array so a partial failure (one bad address) doesn't hide as a full success.
-async function sendOutreachEmails(recipients, rawSubject, rawBody) {
+async function sendOutreachEmails(recipients, rawSubject, rawBody, attachments = []) {
   if (process.env.EMAIL_ENABLED !== 'true') {
     return recipients.map((r) => ({
       email: r.email,
@@ -39,14 +48,16 @@ async function sendOutreachEmails(recipients, rawSubject, rawBody) {
   }
 
   const results = [];
+  const attachmentLinks = buildAttachmentLinks(attachments);
 
   for (const r of recipients) {
     const subject = fillTemplate(rawSubject, r.vars);
     let body = fillTemplate(rawBody, r.vars);
-    // If a Form link was computed but the template body doesn't reference
-    // {{formLink}}, still append it so it's never silently dropped from the email.
     if (r.vars.formLink && !rawBody.includes('{{formLink}}')) {
       body += `\n\nGoogle Form link: ${r.vars.formLink}`;
+    }
+    if (attachmentLinks) {
+      body += attachmentLinks;
     }
     try {
       await getResendClient().emails.send({

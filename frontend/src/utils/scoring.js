@@ -12,10 +12,10 @@ export function calculateSuitability(skillScore, experienceScore) {
 // Suggests (does not force) a decision based on the computed rating.
 // Recruiter can always override via the decision dropdown.
 export function suggestDecision(rating) {
-  if (rating == null) return 'Not started';
+  if (rating == null) return 'Not interested';
   if (rating >= 8) return 'Selected';
-  if (rating >= 5) return 'In progress';
+  if (rating >= 5) return 'Not interested';
   return 'Rejected';
 }
 
-export const ASSESSMENT_STATUSES = ['Not started', 'In progress', 'Selected', 'Rejected'];
+export const ASSESSMENT_STATUSES = ['Selected', 'Rejected', 'Not Appeared', 'Rescheduled', 'Not interested', 'Refered for other position'];
