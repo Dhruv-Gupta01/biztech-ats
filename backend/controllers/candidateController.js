@@ -1,7 +1,7 @@
 const Candidate = require('../models/Candidate');
 const Role = require('../models/Role');
 const { buildHistoryEntries } = require('../utils/history');
-const pdfParse = require('pdf-parse');
+const { parseResumeText } = require('../utils/resumeParser');
 
 const STOP_WORDS = new Set([
   'the','and','for','with','that','this','have','from','they','will','would','there','their','what','about','which',
@@ -182,25 +182,26 @@ exports.applyCandidate = async (req, res) => {
       : (skills || '').split(',').map((s) => s.trim()).filter(Boolean);
 
     let resumeText = '';
+    let parsedData = {};
     try {
-      const parsed = await pdfParse(req.file.buffer);
-      resumeText = parsed.text || '';
+      parsedData = await parseResumeText(req.file.buffer);
+      resumeText = parsedData.resumeText || '';
     } catch (err) {
       console.error('Failed to parse resume PDF for text extraction:', err.message);
     }
 
     const candidate = await Candidate.create({
-      fullName,
-      email: email.toLowerCase().trim(),
-      phone,
-      location,
-      roleCode: roleCode.toUpperCase().trim(),
-      employmentType,
-      yearsOfExperience: Number(yearsOfExperience),
-      ctcCurrent: Number(ctcCurrent) || 0,
-      ctcExpected: Number(ctcExpected) || 0,
-      noticePeriod,
-      skills: skillsArray,
+      fullName: fullName || parsedData.fullName,
+      email: (email || parsedData.email || '').toLowerCase().trim(),
+      phone: phone || parsedData.phone || '',
+      location: location || parsedData.location || '',
+      roleCode: (roleCode || '').toUpperCase().trim(),
+      employmentType: employmentType || parsedData.employmentType || 'Full-Time',
+      yearsOfExperience: Number(yearsOfExperience) || parsedData.yearsOfExperience || 0,
+      ctcCurrent: Number(ctcCurrent) || parsedData.ctcCurrent || 0,
+      ctcExpected: Number(ctcExpected) || parsedData.ctcExpected || 0,
+      noticePeriod: noticePeriod || parsedData.noticePeriod || '',
+      skills: skillsArray.length > 0 ? skillsArray : parsedData.skills || [],
       resumeData: req.file.buffer,
       resumeText,
       generalRemarks,
@@ -395,5 +396,89 @@ exports.recordInterviewStage = async (req, res) => {
   } catch (err) {
     console.error(err);
     return res.status(500).json({ success: false, message: 'Server error while recording interview stage.' });
+  }
+};
+
+// POST /api/candidates/bulk-upload-resumes
+// Multipart form with:
+// - `resumes`: multiple PDF files
+// - `roleCode`: string
+// Parses each PDF and creates Candidate records in MongoDB.
+exports.bulkUploadResumes = async (req, res) => {
+  try {
+    const { roleCode } = req.body;
+    const files = req.files || [];
+
+    if (!roleCode || !files.length) {
+      return res.status(400).json({ success: false, message: 'roleCode and at least one resume PDF are required.' });
+    }
+
+    const role = await Role.findOne({ code: roleCode.toUpperCase().trim() });
+    if (!role) {
+      return res.status(404).json({ success: false, message: `Role code "${roleCode}" not found.` });
+    }
+
+    const results = {
+      insertedCount: 0,
+      skippedCount: 0,
+      errors: []
+    };
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const rowNum = i + 1;
+
+      try {
+        const parsedData = await parseResumeText(file.buffer);
+        
+        const fullName = parsedData.fullName;
+        const email = parsedData.email;
+        const phone = parsedData.phone;
+        const skills = parsedData.skills;
+
+        if (!fullName || !email) {
+          results.skippedCount++;
+          results.errors.push({ row: rowNum, fileName: file.originalname, reason: 'Could not extract name/email from resume.' });
+          continue;
+        }
+
+        const existing = await Candidate.findOne({ email: email.toLowerCase().trim() });
+        if (existing) {
+          results.skippedCount++;
+          results.errors.push({ row: rowNum, fileName: file.originalname, reason: `Duplicate email "${email}" — already exists.` });
+          continue;
+        }
+
+        const candidate = await Candidate.create({
+          fullName,
+          email: email.toLowerCase().trim(),
+          phone: phone || '',
+          location: parsedData.location || '',
+          roleCode: roleCode.toUpperCase().trim(),
+          employmentType: parsedData.employmentType || 'Full-Time',
+          yearsOfExperience: parsedData.yearsOfExperience || 0,
+          ctcCurrent: parsedData.ctcCurrent || 0,
+          ctcExpected: parsedData.ctcExpected || 0,
+          noticePeriod: parsedData.noticePeriod || '',
+          skills,
+          resumeData: file.buffer,
+          resumeText: parsedData.resumeText || '',
+          status: 'Naukri Response',
+          source: 'Resume Upload'
+        });
+        candidate.resumeUrl = `/api/candidates/${candidate._id}/resume`;
+        await candidate.save();
+
+        results.insertedCount++;
+      } catch (err) {
+        results.skippedCount++;
+        results.errors.push({ row: rowNum, fileName: file.originalname, reason: err.message });
+      }
+    }
+
+    return res.status(200).json({ success: true, ...results });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Server error while bulk uploading resumes.' });
   }
 };

@@ -16,6 +16,9 @@ const candidateSchema = new mongoose.Schema({
   ctcExpected: { type: Number, default: 0 },
   noticePeriod: { type: String, default: '' }, // e.g. "30 days"
   skills: { type: [String], default: [] },
+  designation: { type: String, default: '' },
+  company: { type: String, default: '' },
+  education: { type: String, default: '' },
   resumeUrl: { type: String, default: '' },
   resumeData: { type: Buffer, default: null },
   resumeText: { type: String, default: '' },

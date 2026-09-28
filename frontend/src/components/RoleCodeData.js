@@ -184,7 +184,7 @@ function RoleCodeData() {
                     </td>
                     <td>
                       {c.resumeUrl ? (
-                        <a href={c.resumeUrl.startsWith('http') ? c.resumeUrl : `${process.env.REACT_APP_API_URL || 'http://localhost:5004'}${c.resumeUrl}`} target="_blank" rel="noopener noreferrer" className="link-button">
+                        <a href={`${process.env.REACT_APP_API_URL}${c.resumeUrl}`} target="_blank" rel="noopener noreferrer" className="link-button">
                           View CV
                         </a>
                       ) : (

@@ -2,7 +2,7 @@
 // request() centralizes error handling: it throws a real, readable Error on both
 // network failures AND non-2xx HTTP responses, instead of silently returning a
 // generic failure object. Check your browser console for [API] logs when debugging.
-const BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5004/api';
+const BASE_URL = `${process.env.REACT_APP_API_URL}/api`;
 
 async function request(url, options = {}) {
   let res;
@@ -34,6 +34,14 @@ async function request(url, options = {}) {
 // --- Candidates ---
 export async function applyCandidate(formData) {
   return request(`${BASE_URL}/candidates/apply`, { method: 'POST', body: formData });
+}
+
+export async function bulkUploadResumes(formData) {
+  return request(`${BASE_URL}/candidates/bulk-upload-resumes`, { method: 'POST', body: formData });
+}
+
+export async function bulkImportWithRole(formData) {
+  return request(`${BASE_URL}/candidates/bulk-import-with-role`, { method: 'POST', body: formData });
 }
 
 export async function fetchCandidates(filters = {}) {

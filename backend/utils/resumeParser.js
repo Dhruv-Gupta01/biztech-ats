@@ -1,10 +1,6 @@
 const pdfParse = require('pdf-parse');
 const { SKILL_KEYWORDS } = require('../utils/skillKeywords');
 
-// Best-effort heuristic extraction from raw resume text. This is NOT a proper
-// resume-parsing model — it's regex + keyword matching, good enough to prefill
-// a form for the candidate to review and correct, never to trust blindly.
-
 function extractEmail(text) {
   const match = text.match(/[\w.+-]+@[\w-]+\.[\w.-]+/);
   return match ? match[0] : '';
@@ -17,8 +13,6 @@ function extractPhone(text) {
 
 function extractName(text) {
   const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
-  // Heuristic: first of the top few lines that looks like "First Last" (2-4 words,
-  // letters only) and isn't an email/phone/URL line.
   for (const line of lines.slice(0, 6)) {
     if (/[@]/.test(line)) continue;
     if (/\d{5,}/.test(line)) continue;
@@ -53,18 +47,55 @@ function extractLocation(text) {
 }
 
 function extractYearsOfExperience(text) {
-  const patterns = [
-    /(?:Total Experience|Years of Experience|Experience)[\s:]+(\d+\.?\d*)\s*(?:years?|yrs?|y)/i,
-    /(\d+\.?\d*)\s*(?:years?|yrs?|y)\s*(?:of\s*)?(?:experience|exp)/i
+  const lower = text.toLowerCase();
+  
+  // Pattern 1: Explicit experience mentions
+  const explicitPatterns = [
+    /(?:total experience|years of experience|experience)[\s:]+(\d+\.?\d*)\s*(?:years?|yrs?|y)/i,
+    /(\d+\.?\d*)\s*(?:years?|yrs?|y)\s*(?:of\s*)?(?:experience|exp)/i,
+    /(?:experience|exp)[\s:]+(\d+\.?\d*)\s*(?:years?|yrs?|y)/i
   ];
   
-  for (const pattern of patterns) {
+  for (const pattern of explicitPatterns) {
     const match = text.match(pattern);
     if (match) {
       const years = parseFloat(match[1]);
       if (!isNaN(years) && years >= 0 && years <= 50) return years;
     }
   }
+  
+  // Pattern 2: Date range like "2018 - Present" or "2018 to Present"
+  const dateRangePatterns = [
+    /(?:20\d{2})\s*(?:-|to|–)\s*(?:present|current|20\d{2})/gi,
+    /(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[\s.]*(?:20\d{2})\s*(?:-|to|–)\s*(?:present|current|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[\s.]*(?:20\d{2}))/gi
+  ];
+  
+  let maxYears = 0;
+  for (const pattern of dateRangePatterns) {
+    const matches = text.match(pattern);
+    if (matches) {
+      for (const match of matches) {
+        const yearMatch = match.match(/(20\d{2})/);
+        if (yearMatch) {
+          const startYear = parseInt(yearMatch[0]);
+          const currentYear = new Date().getFullYear();
+          const years = currentYear - startYear;
+          if (years > maxYears && years <= 50) maxYears = years;
+        }
+      }
+    }
+  }
+  
+  if (maxYears > 0) return maxYears;
+  
+  // Pattern 3: Look for "X+ years" or "X yrs" anywhere in text
+  const plusPattern = /(\d+\.?\d*)\s*\+?\s*(?:years?|yrs?|y)\b/gi;
+  const plusMatch = text.match(plusPattern);
+  if (plusMatch) {
+    const years = parseFloat(plusMatch[0].match(/(\d+\.?\d*)/)[1]);
+    if (!isNaN(years) && years >= 0 && years <= 50) return years;
+  }
+  
   return 0;
 }
 
@@ -78,7 +109,7 @@ function extractCurrentCTC(text) {
     const match = text.match(pattern);
     if (match) {
       const ctc = parseFloat(match[1].replace(/,/g, ''));
-      if (!isNaN(ctc)) return ctc * 100000; // Convert to rupees
+      if (!isNaN(ctc)) return ctc * 100000;
     }
   }
   return 0;
@@ -93,7 +124,7 @@ function extractExpectedCTC(text) {
     const match = text.match(pattern);
     if (match) {
       const ctc = parseFloat(match[1].replace(/,/g, ''));
-      if (!isNaN(ctc)) return ctc * 100000; // Convert to rupees
+      if (!isNaN(ctc)) return ctc * 100000;
     }
   }
   return 0;
@@ -167,22 +198,41 @@ function extractEducation(text) {
   return education.slice(0, 3).join('; ');
 }
 
-const { parseResumeText } = require('../utils/resumeParser');
+async function parseResumeText(buffer) {
+  const parsed = await pdfParse(buffer);
+  const text = parsed.text || '';
+  
+  return {
+    fullName: extractName(text),
+    email: extractEmail(text),
+    phone: extractPhone(text),
+    skills: extractSkills(text),
+    location: extractLocation(text),
+    yearsOfExperience: extractYearsOfExperience(text),
+    ctcCurrent: extractCurrentCTC(text),
+    ctcExpected: extractExpectedCTC(text),
+    noticePeriod: extractNoticePeriod(text),
+    employmentType: extractEmploymentType(text),
+    designation: extractDesignation(text),
+    company: extractCompany(text),
+    education: extractEducation(text),
+    resumeText: text
+  };
+}
 
-// POST /api/candidates/parse-resume
-// Accepts the same multipart 'resume' field as /apply. Returns best-guess field
-// values for the frontend to prefill — it does not create a Candidate record.
-exports.parseResume = async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ success: false, message: 'Resume PDF is required.' });
-    }
-
-    const data = await parseResumeText(req.file.buffer);
-
-    return res.status(200).json({ success: true, message: 'Resume parsed.', data });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ success: false, message: `Could not parse resume: ${err.message}` });
-  }
+module.exports = {
+  extractEmail,
+  extractPhone,
+  extractName,
+  extractSkills,
+  extractLocation,
+  extractYearsOfExperience,
+  extractCurrentCTC,
+  extractExpectedCTC,
+  extractNoticePeriod,
+  extractEmploymentType,
+  extractDesignation,
+  extractCompany,
+  extractEducation,
+  parseResumeText
 };

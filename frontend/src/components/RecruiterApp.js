@@ -12,6 +12,7 @@ import SlackGroups from './SlackGroups';
 import ImportReview from './ImportReview';
 import GoogleForms from './GoogleForms';
 import RoleCodeData from './RoleCodeData';
+import BulkResumeUpload from './BulkResumeUpload';
 
 // Recruiters get the Manual/Referral source picker on the Application Form tab;
 // the candidate-facing form (CandidateDashboard.js) renders CandidateForm directly
@@ -30,7 +31,8 @@ const views = {
   roles: RolesCodes,
   slack: SlackGroups,
   forms: GoogleForms,
-  roleCodeData: RoleCodeData
+  roleCodeData: RoleCodeData,
+  bulkUpload: BulkResumeUpload
 };
 
 // The full 7-tab dashboard shown only after a recruiter logs in.

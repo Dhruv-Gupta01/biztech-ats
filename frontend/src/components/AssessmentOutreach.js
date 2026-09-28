@@ -19,6 +19,24 @@ function buildFormLinkPreview(email) {
   return `${baseUrl}${separator}entry.${entryId}=${encodeURIComponent(email)}`;
 }
 
+const STATUS_OPTIONS = [
+  'Naukri Response',
+  'Information Form',
+  'Interview 1',
+  'Interview 1 Shortlisted',
+  'Interview 2',
+  'Interview 2 Shortlisted',
+  'Assessment 1',
+  'Assessment 1 Shortlisted',
+  'Assessment 1 Passed',
+  'Assessment 2',
+  'Assessment 2 Shortlisted',
+  'Assessment 2 Passed',
+  'Final Round Shortlisted',
+  'Selected',
+  'Rejected'
+];
+
 function AssessmentOutreach() {
   const [candidates, setCandidates] = useState([]);
   const [roles, setRoles] = useState([]);
@@ -26,6 +44,7 @@ function AssessmentOutreach() {
   const [loadError, setLoadError] = useState('');
   const [selectedIds, setSelectedIds] = useState([]);
   const [roleFilter, setRoleFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
   const [templateId, setTemplateId] = useState(emailTemplates[0].id);
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState(null);
@@ -128,8 +147,30 @@ function AssessmentOutreach() {
                 {roles.map((r) => <option key={r.code} value={r.code}>{r.code} — {r.title}</option>)}
               </select>
             </div>
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-500)' }}>Filter by Status</label>
+              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid var(--border)', marginTop: 4 }}>
+                <option value="">All statuses</option>
+                {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+              <button className="btn-secondary" onClick={() => {
+                const filtered = candidates.filter((c) => (!roleFilter || c.roleCode === roleFilter) && (!statusFilter || c.status === statusFilter));
+                setSelectedIds(filtered.map((c) => c._id));
+              }}>
+                Select All Filtered
+              </button>
+              <button className="btn-secondary" onClick={() => setSelectedIds([])}>
+                Clear Selection
+              </button>
+            </div>
             <div className="candidate-select-list">
-              {candidates.filter((c) => !roleFilter || c.roleCode === roleFilter).map((c) => (
+              {candidates.filter((c) => {
+                const roleMatch = !roleFilter || c.roleCode === roleFilter;
+                const statusMatch = !statusFilter || c.status === statusFilter;
+                return roleMatch && statusMatch;
+              }).map((c) => (
                 <label key={c._id} className={'candidate-select-item' + (selectedIds.includes(c._id) ? ' selected' : '')}>
                   <input type="checkbox" checked={selectedIds.includes(c._id)} onChange={() => toggleCandidate(c._id)} />
                   <div>

@@ -73,38 +73,6 @@ function CandidateProfileModal({ candidate, role, onClose }) {
           </div>
 
           <div className="profile-section">
-            <h4>Assessment</h4>
-            <div className="profile-grid">
-              <Field label="Assessment Status">{c.assessmentStatus}</Field>
-              <Field label="Suitability Score">{c.score?.suitabilityRating ?? '—'}</Field>
-              <Field label="Skill Score">{c.score?.skillScore ?? '—'}</Field>
-              <Field label="Experience Score">{c.score?.experienceScore ?? '—'}</Field>
-            </div>
-            {c.assessmentRemarks && <p style={{ fontSize: 13, marginTop: 8 }}>{c.assessmentRemarks}</p>}
-          </div>
-
-          {(stages.length > 0 || completed.length > 0) && (
-            <div className="profile-section">
-              <h4>Interview Progress</h4>
-              <ul style={{ margin: 0, paddingLeft: 18 }}>
-                {(stages.length > 0 ? stages : completed.map((d) => d.stageName)).map((stageName, i) => {
-                  const done = completed[i];
-                  return (
-                    <li key={stageName + i} style={{ fontSize: 12.5, marginBottom: 4 }}>
-                      {done ? (
-                        <>✅ <strong>{stageName}</strong> — rating {done.rating ?? '—'}/5, interviewer: {done.interviewer || '—'}
-                          {done.feedback && <> — "{done.feedback}"</>}</>
-                      ) : (
-                        <>⬜ <strong>{stageName}</strong> (pending)</>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          )}
-
-          <div className="profile-section">
             <h4>Google Form Submissions</h4>
             {(c.formSubmissions || []).length === 0 ? (
               <p style={{ fontSize: 13, color: 'var(--text-500)' }}>

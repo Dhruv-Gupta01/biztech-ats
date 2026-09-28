@@ -5,6 +5,7 @@ node_modules/
 .env
 .env.local
 .env.*.local
+frontend/.env
 
 # Uploaded candidate resumes — real PII, not source code
 backend/uploads/**
