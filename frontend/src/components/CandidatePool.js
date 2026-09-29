@@ -3,11 +3,10 @@ import StatusBadge from './StatusBadge';
 import CandidateProfileModal from './CandidateProfileModal';
 import { useAuth } from '../auth/AuthContext';
 import {
-  fetchCandidates, scoreCandidate, bulkImportCandidates, fetchSlackMappings, assignCandidatesToSlack,
-  deleteCandidateRecord, fetchRoles, recordInterviewStage, fetchFormSyncStatus, runFormSyncNow, analyzeCandidatesBulk,
+  fetchCandidates, bulkImportCandidates, fetchSlackMappings, assignCandidatesToSlack,
+  fetchRoles, fetchFormSyncStatus, runFormSyncNow, analyzeCandidatesBulk,
   updateCandidate
 } from '../api/api';
-import { calculateSuitability, suggestDecision } from '../utils/scoring';
 
 const typeLabel = (t) => (t === 'Contract' ? 'Contractual' : t === 'Part-Time' ? 'Part Time' : t === 'Internship' ? 'Internship' : 'Full Time');
 const money = (n) => (n ? `₹${(n / 100000).toFixed(1)}L` : '—');
@@ -74,7 +73,6 @@ function CandidatePool() {
   const [filters, setFilters] = useState({ roleCode: '', employmentType: '', status: '', minExperience: '', maxExperience: '', source: '' });
   const [query, setQuery] = useState('');
 
-  const [scoringId, setScoringId] = useState(null);
   const [analyzerScores, setAnalyzerScores] = useState({});
   const [analyzing, setAnalyzing] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -87,16 +85,10 @@ function CandidatePool() {
   const [slackAssigning, setSlackAssigning] = useState(false);
   const [slackResult, setSlackResult] = useState(null);
 
-   const [deleteError, setDeleteError] = useState('');
+    const [deleteError] = useState('');
 
-   const [stagesOpenId, setStagesOpenId] = useState(null);
-   const [stageError, setStageError] = useState('');
-   const [stageForm, setStageForm] = useState({ interviewer: '', rating: '', feedback: '' });
-   const [stageSubmitting, setStageSubmitting] = useState(false);
-
-  const [interviewRounds, setInterviewRounds] = useState(['Interview']);
+   const [interviewRounds, setInterviewRounds] = useState(['Interview']);
   const [cvScreeningDraft, setCvScreeningDraft] = useState({});
-  const [roundDraft, setRoundDraft] = useState({});
   const [referToOtherRole, setReferToOtherRole] = useState({}); // { [candidateId]: roleCode }
 
   const addInterviewRound = () => {
@@ -306,19 +298,7 @@ function CandidatePool() {
     }
   };
 
-  const removeCandidate = async (c) => {
-    if (!window.confirm(`Remove ${c.fullName} from the candidate pool? This cannot be undone.`)) return;
-    setDeleteError('');
-    try {
-      await deleteCandidateRecord(c._id);
-      setCandidates((prev) => prev.filter((x) => x._id !== c._id));
-      setSelectedIds((prev) => prev.filter((id) => id !== c._id));
-    } catch (err) {
-      setDeleteError(`Could not remove ${c.fullName}: ${err.message}`);
-    }
-   };
-
-  const runBulkAnalyze = async () => {
+   const runBulkAnalyze = async () => {
     setAnalyzing(true);
     try {
       const ids = selectedIds.length > 0 ? selectedIds : [];
@@ -337,11 +317,6 @@ function CandidatePool() {
     }
   };
 
-  const roleStages = (roleCode) => {
-    const role = roles.find((r) => r.code === roleCode);
-    return role ? role.interviewStages : ['Recruiter Screen', 'Technical', 'Hiring Manager'];
-  };
-
   const startEditingDate = (id, field) => {
     setEditingDate({ candidateId: id, field });
   };
@@ -355,31 +330,6 @@ function CandidatePool() {
       console.error('Failed to save joining date:', err);
     } finally {
       setEditingDate({});
-    }
-  };
-
-  const openStagesPanel = (c) => {
-    setStageError('');
-    setStageForm({ interviewer: '', rating: '', feedback: '' });
-    setStagesOpenId(stagesOpenId === c._id ? null : c._id);
-  };
-
-  const submitStage = async (c) => {
-    setStageError('');
-    setStageSubmitting(true);
-    try {
-      const res = await recordInterviewStage(c._id, {
-        interviewer: stageForm.interviewer,
-        rating: stageForm.rating ? Number(stageForm.rating) : undefined,
-        feedback: stageForm.feedback,
-        changedBy: user?.fullName
-      });
-      setCandidates((prev) => prev.map((x) => (x._id === c._id ? res.data : x)));
-      setStageForm({ interviewer: '', rating: '', feedback: '' });
-    } catch (err) {
-      setStageError(`Could not record stage: ${err.message}`);
-    } finally {
-      setStageSubmitting(false);
     }
   };
 
@@ -504,9 +454,6 @@ function CandidatePool() {
             </thead>
             <tbody>
               {filtered.map((c) => {
-                const stages = roleStages(c.roleCode);
-                const completed = c.interviewProgress || [];
-                const nextStage = stages[completed.length];
                 return (
                   <React.Fragment key={c._id}>
                      <tr>

@@ -25,7 +25,6 @@ const EMP_TYPE_OPTIONS = ['Full-Time', 'Part-Time', 'Contract', 'Internship'];
 function RoleCodeData() {
   const [roles, setRoles] = useState([]);
   const [allCandidates, setAllCandidates] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [selectedRoleCode, setSelectedRoleCode] = useState('');
   const [savingNotesId, setSavingNotesId] = useState(null);
@@ -35,7 +34,6 @@ function RoleCodeData() {
   const [filters, setFilters] = useState({ employmentType: '', status: '', source: '', query: '' });
 
   useEffect(() => {
-    setLoading(true);
     Promise.all([fetchRoles(), fetchCandidates()])
       .then(([rolesRes, candidatesRes]) => {
         setRoles(rolesRes.data || []);
@@ -43,7 +41,7 @@ function RoleCodeData() {
         setLoadError('');
       })
       .catch((err) => setLoadError(`Could not load data: ${err.message}`))
-      .finally(() => setLoading(false));
+      .finally(() => {});
   }, []);
 
   const filteredCandidates = useMemo(() => {

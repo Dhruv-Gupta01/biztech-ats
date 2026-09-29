@@ -27,10 +27,6 @@ function Field({ label, children }) {
 function CandidateProfileModal({ candidate, role, onClose }) {
   if (!candidate) return null;
   const c = candidate;
-  const stages = role?.interviewStages || [];
-  const completed = c.interviewProgress || [];
-  const submission = c.formSubmission;
-  const hasSubmission = submission && submission.submittedAt;
 
   return (
     <div className="modal-backdrop" onClick={onClose}>

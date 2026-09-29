@@ -42,7 +42,7 @@ function TemplateManager({ templates, setTemplates, onTemplateSelect, onClose })
   const handleCreate = async (e) => {
     e.preventDefault();
     try {
-      const res = await createEmailTemplate(form);
+      await createEmailTemplate(form);
       setShowCreate(false);
       resetForm();
       const updated = await fetchEmailTemplates();
