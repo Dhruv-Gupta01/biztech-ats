@@ -2,7 +2,10 @@ const pdfParse = require('pdf-parse');
 const { SKILL_KEYWORDS } = require('../utils/skillKeywords');
 
 function extractEmail(text) {
-  const match = text.match(/[\w.+-]+@[\w-]+\.[\w.-]+/);
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  const top = lines.slice(0, 20).join('\n');
+  const haystack = top || text;
+  const match = haystack.match(/[\w.+-]+@[\w-]+\.[\w.-]+/);
   return match ? match[0] : '';
 }
 
@@ -11,14 +14,28 @@ function extractPhone(text) {
   return match ? match[0].replace(/\s+/g, ' ').trim() : '';
 }
 
+const HEADLINE_KEYWORDS = new Set([
+  'engineer','developer','manager','director','analyst','consultant','specialist',
+  'lead','senior','junior','with','years','experience','looking','seeking','role',
+  'position','opportunity','summary','profile','objective','about','career',
+  'passionate','skilled','expert','professional','responsible','working','knowledge',
+  'proficient','familiar','understanding','ability','skills','strengths','interests',
+  'hobbies','objective','mission','vision','dedicated','result','oriented','detail'
+]);
+
 function extractName(text) {
   const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
-  for (const line of lines.slice(0, 6)) {
+  for (const line of lines.slice(0, 8)) {
     if (/[@]/.test(line)) continue;
     if (/\d{5,}/.test(line)) continue;
     if (/https?:\/\//i.test(line)) continue;
+    if (/^[A-Z\s\.\-']{10,}$/.test(line)) continue;
+    const lower = line.toLowerCase();
     const words = line.split(/\s+/);
-    if (words.length >= 2 && words.length <= 4 && /^[A-Za-z.\s'-]+$/.test(line)) {
+    if (words.length < 2 || words.length > 3) continue;
+    if (HEADLINE_KEYWORDS.has(lower.split(/\s+/)[0])) continue;
+    if (words.some((w) => HEADLINE_KEYWORDS.has(w.toLowerCase()))) continue;
+    if (/^[A-Za-z.\s'-]+$/.test(line)) {
       return line;
     }
   }
@@ -33,15 +50,20 @@ function extractSkills(text) {
 function extractLocation(text) {
   const locationPatterns = [
     /(?:Location|Address|Based in|City)[\s:]+([A-Za-z\s,]+)/i,
-    /(?:Bangalore|Bengaluru|Mumbai|Delhi|Pune|Hyderabad|Chennai|Kolkata|Gurgaon|Gurugram|Noida|Indore|Ahmedabad|Jaipur|Kochi|Coimbatore|Vijayawada|Visakhapatnam|New Delhi|NCR|India)/i
   ];
   
   for (const pattern of locationPatterns) {
     const match = text.match(pattern);
     if (match) {
-      if (match[1]) return match[1].trim();
-      return match[0].trim();
+      return match[1].trim();
     }
+  }
+
+  const topLines = text.split('\n').slice(0, 25).join('\n');
+  const cityPattern = /(?:Bangalore|Bengaluru|Mumbai|Delhi|Pune|Hyderabad|Chennai|Kolkata|Gurgaon|Gurugram|Noida|Indore|Ahmedabad|Jaipur|Kochi|Coimbatore|Vijayawada|Visakhapatnam|New Delhi|NCR|India)/i;
+  const cityMatch = topLines.match(cityPattern);
+  if (cityMatch) {
+    return cityMatch[0].trim();
   }
   return '';
 }
@@ -108,8 +130,9 @@ function extractCurrentCTC(text) {
   for (const pattern of patterns) {
     const match = text.match(pattern);
     if (match) {
-      const ctc = parseFloat(match[1].replace(/,/g, ''));
-      if (!isNaN(ctc)) return ctc * 100000;
+      const raw = match[1].replace(/,/g, '');
+      const ctc = parseFloat(raw);
+      if (!isNaN(ctc)) return ctc >= 100000 ? ctc : ctc * 100000;
     }
   }
   return 0;
@@ -123,8 +146,9 @@ function extractExpectedCTC(text) {
   for (const pattern of patterns) {
     const match = text.match(pattern);
     if (match) {
-      const ctc = parseFloat(match[1].replace(/,/g, ''));
-      if (!isNaN(ctc)) return ctc * 100000;
+      const raw = match[1].replace(/,/g, '');
+      const ctc = parseFloat(raw);
+      if (!isNaN(ctc)) return ctc >= 100000 ? ctc : ctc * 100000;
     }
   }
   return 0;

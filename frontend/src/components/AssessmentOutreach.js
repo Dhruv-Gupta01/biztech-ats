@@ -192,8 +192,6 @@ function AssessmentOutreach() {
             <div className="template-vars">
               <span className="var-chip">{'{{candidateName}}'}</span>
               <span className="var-chip">{'{{roleTitle}}'}</span>
-              <span className="var-chip">{'{{roleCode}}'}</span>
-              <span className="var-chip">{'{{formLink}}'}</span>
             </div>
 
             {primaryCandidate && (
@@ -231,10 +229,7 @@ function AssessmentOutreach() {
           </div>
 
           {showTemplateManager && (
-            <div className="card" style={{ marginTop: 20, padding: 20 }}>
-              <h4 style={{ marginTop: 0, marginBottom: 15 }}>Email Template Manager</h4>
-              <TemplateManager onClose={() => setShowTemplateManager(false)} templates={templates} setTemplates={setTemplates} onTemplateSelect={(id) => setTemplateId(id)} />
-            </div>
+            <TemplateManager onClose={() => setShowTemplateManager(false)} templates={templates} setTemplates={setTemplates} onTemplateSelect={(id) => setTemplateId(id)} />
           )}
         </div>
       )}

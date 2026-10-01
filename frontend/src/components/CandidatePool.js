@@ -5,7 +5,7 @@ import { useAuth } from '../auth/AuthContext';
 import {
   fetchCandidates, bulkImportCandidates, fetchSlackMappings, assignCandidatesToSlack,
   fetchRoles, fetchFormSyncStatus, runFormSyncNow, analyzeCandidatesBulk,
-  updateCandidate
+  updateCandidate, deleteCandidateRecord
 } from '../api/api';
 
 const typeLabel = (t) => (t === 'Contract' ? 'Contractual' : t === 'Part-Time' ? 'Part Time' : t === 'Internship' ? 'Internship' : 'Full Time');
@@ -62,14 +62,11 @@ function toCSV(rows) {
 function CandidatePool() {
   const { user } = useAuth();
   const [candidates, setCandidates] = useState([]);
-  const [allSources, setAllSources] = useState([]); // for the Source filter dropdown, derived once from an unfiltered fetch
-  const [roles, setRoles] = useState([]); // needed for each role's interviewStages list
+  const [allSources, setAllSources] = useState([]);
+  const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
-  // Filters — roleCode/employmentType/status/experience/source are now all sent
-  // to the backend (SRD 3.2's full filter set); free-text name/location/skill
-  // search stays client-side since it's a simple substring match on already-loaded data.
   const [filters, setFilters] = useState({ roleCode: '', employmentType: '', status: '', minExperience: '', maxExperience: '', source: '' });
   const [query, setQuery] = useState('');
 
@@ -85,11 +82,12 @@ function CandidatePool() {
   const [slackAssigning, setSlackAssigning] = useState(false);
   const [slackResult, setSlackResult] = useState(null);
 
-    const [deleteError] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
 
-   const [interviewRounds, setInterviewRounds] = useState(['Interview']);
+  const [interviewRounds, setInterviewRounds] = useState(['Interview']);
   const [cvScreeningDraft, setCvScreeningDraft] = useState({});
-  const [referToOtherRole, setReferToOtherRole] = useState({}); // { [candidateId]: roleCode }
+  const [referToOtherRole, setReferToOtherRole] = useState({});
 
   const addInterviewRound = () => {
     const nextNum = interviewRounds.length + 1;
@@ -140,13 +138,10 @@ function CandidatePool() {
     }
   };
 
-  // Joining date editing
   const [editingDate, setEditingDate] = useState({});
 
-  // Candidate profile modal (opened by clicking a name)
   const [profileCandidate, setProfileCandidate] = useState(null);
 
-  // Google Form response sync
   const [formSyncStatus, setFormSyncStatus] = useState(null);
   const [formSyncing, setFormSyncing] = useState(false);
   const [formSyncResult, setFormSyncResult] = useState(null);
@@ -167,10 +162,8 @@ function CandidatePool() {
       .finally(() => setLoading(false));
   };
 
-  // Re-fetch from the server whenever a server-side filter changes.
-  useEffect(loadCandidates, [filters.roleCode, filters.status, filters.minExperience, filters.maxExperience, filters.source]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(loadCandidates, [filters]);
 
-  // One unfiltered fetch on mount just to populate the Source dropdown options and role list.
   useEffect(() => {
     fetchCandidates().then((res) => setAllSources([...new Set(res.data.map((c) => c.source).filter(Boolean))].sort())).catch(() => {});
     fetchRoles().then((res) => setRoles(res.data)).catch((err) => console.error('[CandidatePool] fetchRoles failed:', err));
@@ -205,7 +198,7 @@ function CandidatePool() {
       ].join('\n') : '';
       setFormSyncResult({ ok, message: res.message, details });
       loadFormSyncStatus();
-      loadCandidates(); // pick up any newly-attached formSubmission data
+      loadCandidates();
     } catch (err) {
       setFormSyncResult({ ok: false, message: err.message });
     } finally {
@@ -215,7 +208,6 @@ function CandidatePool() {
 
   const roleCodes = useMemo(() => roles.map((r) => r.code).sort(), [roles]);
 
-  // employmentType and free-text search stay client-side on top of the server-filtered set.
   const filtered = useMemo(() => {
     return candidates.filter((c) => {
       if (filters.employmentType && c.employmentType !== filters.employmentType) return false;
@@ -298,7 +290,24 @@ function CandidatePool() {
     }
   };
 
-   const runBulkAnalyze = async () => {
+  const handleDeleteSelected = async () => {
+    if (!selectedIds.length) return;
+    const count = selectedIds.length;
+    if (!window.confirm(`Delete ${count} selected candidate${count > 1 ? 's' : ''}? This cannot be undone.`)) return;
+    setDeleteConfirm(true);
+    setDeleteError('');
+    try {
+      await Promise.all(selectedIds.map((id) => deleteCandidateRecord(id)));
+      setCandidates((prev) => prev.filter((c) => !selectedIds.includes(c._id)));
+      setSelectedIds([]);
+      setDeleteConfirm(false);
+    } catch (err) {
+      setDeleteError(`Could not delete candidates: ${err.message}`);
+      setDeleteConfirm(false);
+    }
+  };
+
+  const runBulkAnalyze = async () => {
     setAnalyzing(true);
     try {
       const ids = selectedIds.length > 0 ? selectedIds : [];
@@ -407,6 +416,9 @@ function CandidatePool() {
         <button className="btn-primary" onClick={assignToSlack} disabled={slackAssigning || selectedIds.length === 0 || !slackTargetId}>
           {slackAssigning ? 'Assigning...' : `# Assign to Slack Group`}
         </button>
+        <button className="btn-secondary" onClick={handleDeleteSelected} disabled={selectedIds.length === 0 || deleteConfirm} style={{ color: 'var(--red)', borderColor: 'var(--red)' }}>
+          {deleteConfirm ? 'Deleting...' : `🗑 Delete Selected`}
+        </button>
         <span style={{ flex: 1 }} />
         {formSyncStatus && (
           <span style={{ fontSize: 12, color: 'var(--text-500)' }}>
@@ -457,47 +469,47 @@ function CandidatePool() {
                 return (
                   <React.Fragment key={c._id}>
                      <tr>
-                       <td><input type="checkbox" checked={selectedIds.includes(c._id)} onChange={() => toggleSelected(c._id)} /></td>
-                       <td className="name-cell">
-                         <button className="name-link" onClick={() => setProfileCandidate(c)}><strong>{c.fullName}</strong></button>
-                         <br /><small>{c.email}</small>
-                       </td>
-                       <td>{c.roleCode}</td>
-                       <td>{typeLabel(c.employmentType)}</td>
-                       <td>{c.location || '—'}</td>
-                       <td>{money(c.ctcCurrent)}</td>
-                       <td>{money(c.ctcExpected)}</td>
-                       <td>{c.noticePeriod || '—'}</td>
-                        <td>
-                          {editingDate.candidateId === c._id && editingDate.field === 'joiningDateTentative' ? (
-                            <input
-                              type="date"
-                              defaultValue={c.joiningDateTentative ? new Date(c.joiningDateTentative).toISOString().slice(0, 10) : ''}
-                              onBlur={(e) => saveJoiningDate(c._id, 'joiningDateTentative', e.target.value)}
-                              autoFocus
-                              style={{ width: '140px', padding: '4px 6px', fontSize: 12 }}
-                            />
-                          ) : (
-                            <button className="btn-secondary" onClick={() => startEditingDate(c._id, 'joiningDateTentative')} style={{ fontSize: 11.5, padding: '4px 8px' }}>
-                              {c.joiningDateTentative ? new Date(c.joiningDateTentative).toLocaleDateString() : 'Set date'}
-                            </button>
-                          )}
+                        <td><input type="checkbox" checked={selectedIds.includes(c._id)} onChange={() => toggleSelected(c._id)} /></td>
+                        <td className="name-cell">
+                          <button className="name-link" onClick={() => setProfileCandidate(c)}><strong>{c.fullName}</strong></button>
+                          <br /><small>{c.email}</small>
                         </td>
-                   <td>
-                          {editingDate.candidateId === c._id && editingDate.field === 'joiningDateConfirm' ? (
-                            <input
-                              type="date"
-                              defaultValue={c.joiningDateConfirm ? new Date(c.joiningDateConfirm).toISOString().slice(0, 10) : ''}
-                              onBlur={(e) => saveJoiningDate(c._id, 'joiningDateConfirm', e.target.value)}
-                              autoFocus
-                              style={{ width: '140px', padding: '4px 6px', fontSize: 12 }}
-                            />
-                          ) : (
-                            <button className="btn-secondary" onClick={() => startEditingDate(c._id, 'joiningDateConfirm')} style={{ fontSize: 11.5, padding: '4px 8px' }}>
-                              {c.joiningDateConfirm ? new Date(c.joiningDateConfirm).toLocaleDateString() : 'Set date'}
-                            </button>
-                          )}
-                        </td>
+                        <td>{c.roleCode}</td>
+                        <td>{typeLabel(c.employmentType)}</td>
+                        <td>{c.location || '—'}</td>
+                        <td>{money(c.ctcCurrent)}</td>
+                        <td>{money(c.ctcExpected)}</td>
+                        <td>{c.noticePeriod || '—'}</td>
+                         <td>
+                           {editingDate.candidateId === c._id && editingDate.field === 'joiningDateTentative' ? (
+                             <input
+                               type="date"
+                               defaultValue={c.joiningDateTentative ? new Date(c.joiningDateTentative).toISOString().slice(0, 10) : ''}
+                               onBlur={(e) => saveJoiningDate(c._id, 'joiningDateTentative', e.target.value)}
+                               autoFocus
+                               style={{ width: '140px', padding: '4px 6px', fontSize: 12 }}
+                             />
+                           ) : (
+                             <button className="btn-secondary" onClick={() => startEditingDate(c._id, 'joiningDateTentative')} style={{ fontSize: 11.5, padding: '4px 8px' }}>
+                               {c.joiningDateTentative ? new Date(c.joiningDateTentative).toLocaleDateString() : 'Set date'}
+                             </button>
+                           )}
+                         </td>
+                    <td>
+                           {editingDate.candidateId === c._id && editingDate.field === 'joiningDateConfirm' ? (
+                             <input
+                               type="date"
+                               defaultValue={c.joiningDateConfirm ? new Date(c.joiningDateConfirm).toISOString().slice(0, 10) : ''}
+                               onBlur={(e) => saveJoiningDate(c._id, 'joiningDateConfirm', e.target.value)}
+                               autoFocus
+                               style={{ width: '140px', padding: '4px 6px', fontSize: 12 }}
+                             />
+                           ) : (
+                             <button className="btn-secondary" onClick={() => startEditingDate(c._id, 'joiningDateConfirm')} style={{ fontSize: 11.5, padding: '4px 8px' }}>
+                               {c.joiningDateConfirm ? new Date(c.joiningDateConfirm).toLocaleDateString() : 'Set date'}
+                             </button>
+                           )}
+                         </td>
                         <td>
                           <select
                             value={cvScreeningDraft[c._id] ?? c.cvScreening ?? ''}
@@ -558,21 +570,25 @@ function CandidatePool() {
                       </tr>
                    </React.Fragment>
                  );
-               })}
-             </tbody>
-           </table>
-        )}
-        {!loading && filtered.length === 0 && <p style={{ padding: 20, color: 'var(--text-500)' }}>No candidates match these filters.</p>}
-      </div>
+                })}
+              </tbody>
+            </table>
+          )}
+          {!loading && filtered.length === 0 && <p style={{ padding: 20, color: 'var(--text-500)' }}>No candidates match these filters.</p>}
+        </div>
 
-      {profileCandidate && (
-        <CandidateProfileModal
-          candidate={profileCandidate}
-          role={roles.find((r) => r.code === profileCandidate.roleCode)}
-          onClose={() => setProfileCandidate(null)}
-        />
-      )}
-    </>
+        {profileCandidate && (
+          <CandidateProfileModal
+            candidate={profileCandidate}
+            role={roles.find((r) => r.code === profileCandidate.roleCode)}
+            onClose={() => setProfileCandidate(null)}
+            onSaved={(updated) => {
+              setCandidates((prev) => prev.map((c) => (c._id === updated._id ? updated : c)));
+              setProfileCandidate(updated);
+            }}
+          />
+        )}
+      </>
   );
 }
 
