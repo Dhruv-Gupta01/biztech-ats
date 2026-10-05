@@ -21,7 +21,16 @@ function getResendClient() {
 }
 
 function fillTemplate(str, vars) {
-  return str.replace(/{{(.*?)}}/g, (_, key) => vars[key.trim()] || `{{${key.trim()}}`);
+  return str.replace(/{{(.*?)}}/g, (_, key) => vars[key.trim()] || `{{${key.trim()}}}`);
+}
+
+function buildAttachmentLinks(attachments) {
+  if (!Array.isArray(attachments) || attachments.length === 0) return '';
+  const links = attachments
+    .filter((a) => a && a.url)
+    .map((a) => `- ${a.name || a.url}: ${a.url}`);
+  if (links.length === 0) return '';
+  return `\n\nAttachments:\n${links.join('\n')}`;
 }
 
 // Sends one personalized email per candidate. Returns a per-recipient result
@@ -39,9 +48,14 @@ async function sendOutreachEmails(recipients, rawSubject, rawBody, attachments =
   }
 
   const results = [];
+  const attachmentLinks = buildAttachmentLinks(attachments);
+
   for (const r of recipients) {
     const subject = fillTemplate(rawSubject, r.vars);
-    const body = fillTemplate(rawBody, r.vars);
+    let body = fillTemplate(rawBody, r.vars);
+    if (attachmentLinks) {
+      body += attachmentLinks;
+    }
     try {
       await getResendClient().emails.send({
         from: process.env.EMAIL_FROM || 'onboarding@resend.dev',

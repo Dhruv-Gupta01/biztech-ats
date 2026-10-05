@@ -85,6 +85,8 @@ function CandidatePool() {
   const [deleteError, setDeleteError] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState(false);
 
+  const [analyzerError, setAnalyzerError] = useState('');
+
   const [interviewRounds, setInterviewRounds] = useState(['Interview']);
   const [cvScreeningDraft, setCvScreeningDraft] = useState({});
   const [referToOtherRole, setReferToOtherRole] = useState({});
@@ -308,20 +310,39 @@ function CandidatePool() {
   };
 
   const runBulkAnalyze = async () => {
+    console.log('[Analyzer] runBulkAnalyze clicked', { selectedIds, roleCode: filters.roleCode });
     setAnalyzing(true);
+    setAnalyzerError('');
     try {
       const ids = selectedIds.length > 0 ? selectedIds : [];
+      console.log('[Analyzer] calling analyzeCandidatesBulk with ids', ids);
       const res = await analyzeCandidatesBulk(ids);
-      if (res.success && res.data) {
-        const scoreMap = {};
-        res.data.forEach((item) => {
-          scoreMap[item.candidateId] = { score: item.score, breakdown: item.breakdown };
-        });
-        setAnalyzerScores((prev) => ({ ...prev, ...scoreMap }));
+      console.log('[Analyzer] analyzeCandidatesBulk response', res);
+      if (!res.success) {
+        const msg = res.message || 'Resume analysis failed.';
+        console.log('[Analyzer] backend reported failure', msg);
+        setAnalyzerError(msg);
+        return;
+      }
+      if (res.data) {
+        if (res.data.length === 0) {
+          const msg = res.message || 'No resume text available for selected candidates. Ensure resumes were uploaded/parsed.';
+          console.log('[Analyzer] empty data', msg);
+          setAnalyzerError(msg);
+        } else {
+          const scoreMap = {};
+          res.data.forEach((item) => {
+            scoreMap[item.candidateId] = { score: item.score, breakdown: item.breakdown };
+          });
+          console.log('[Analyzer] updating scores', scoreMap);
+          setAnalyzerScores((prev) => ({ ...prev, ...scoreMap }));
+        }
       }
     } catch (err) {
-      console.error('Bulk resume analysis failed:', err);
+      console.error('[Analyzer] bulk resume analysis failed:', err);
+      setAnalyzerError(err.message || 'Bulk resume analysis failed.');
     } finally {
+      console.log('[Analyzer] finishing, analyzing=false');
       setAnalyzing(false);
     }
   };
@@ -375,6 +396,8 @@ function CandidatePool() {
         </div>
       )}
       {deleteError && <div className="alert alert-error">⚠️ {deleteError}</div>}
+      {analyzerError && <div className="alert alert-error">⚠️ {analyzerError}</div>}
+      {analyzing && <div className="alert">⏳ Resume Analyzer is running... Please wait while we analyze the selected candidates.</div>}
 
       <div className="filters-row">
         <select value={filters.roleCode} onChange={(e) => setFilters({ ...filters, roleCode: e.target.value })}>
@@ -561,7 +584,7 @@ function CandidatePool() {
                             value={c.assessmentStatus || ''}
                             onChange={(e) => saveAssessmentStatus(c._id, e.target.value)}
                             className={assessmentBadgeClass(c.assessmentStatus)}
-                            style={{ border: '1px solid var(--border)', background: 'transparent', padding: '2px 6px', fontSize: 12, cursor: 'pointer', borderRadius: 4, minWidth: 140, color: 'var(--text-900)' }}
+                            style={{ border: '1px solid var(--border)', background: 'transparent', padding: '2px 6px', fontSize: 12, cursor: 'pointer', borderRadius: 4, minWidth: 140, color: '#000' }}
                           >
                             {ASSESSMENT_STATUSES.map((s) => <option key={s}>{s}</option>)}
                           </select>

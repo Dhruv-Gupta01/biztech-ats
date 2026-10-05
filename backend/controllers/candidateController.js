@@ -125,7 +125,7 @@ exports.analyzeBulk = async (req, res) => {
     const roleCode = roleCodes[0];
     const role = await Role.findOne({ code: roleCode });
     if (!role || !role.description) {
-      return res.status(400).json({ success: false, message: `No job description found for role code: ${roleCode}` });
+      return res.status(400).json({ success: false, message: `No job description found for role code: ${roleCode}. Please add a description to the role first.` });
     }
 
     const { scoreResumes } = require('../services/resumeAnalyzerService');
@@ -134,19 +134,24 @@ exports.analyzeBulk = async (req, res) => {
       .map((c) => ({ id: c._id.toString(), resume_text: c.resumeText }));
 
     if (resumes.length === 0) {
-      return res.status(200).json({ success: true, count: 0, data: [] });
+      return res.status(200).json({ success: true, count: 0, data: [], message: 'No resume text available for selected candidates. Ensure resumes were uploaded/parsed.' });
     }
 
-    const results = await scoreResumes(role.description, resumes);
-    const data = results.map((r) => ({
-      candidateId: r.id,
-      score: r.error ? null : Number((r.result.score / 10).toFixed(1)),
-      error: r.error
-    }));
+    try {
+      const results = await scoreResumes(role.description, resumes);
+      const data = results.map((r) => ({
+        candidateId: r.id,
+        score: r.error ? null : Number((r.result.score / 10).toFixed(1)),
+        error: r.error
+      }));
 
-    return res.status(200).json({ success: true, count: data.length, data });
+      return res.status(200).json({ success: true, count: data.length, data });
+    } catch (analyzerErr) {
+      console.error('Resume analyzer service error:', analyzerErr);
+      return res.status(500).json({ success: false, message: `Resume analyzer failed: ${analyzerErr.message}` });
+    }
   } catch (err) {
-    console.error(err);
+    console.error('Bulk analyze error:', err);
     return res.status(500).json({ success: false, message: 'Server error while bulk analyzing candidates.' });
   }
 };
