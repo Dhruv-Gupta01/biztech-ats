@@ -117,9 +117,10 @@ exports.analyzeBulk = async (req, res) => {
       return res.status(200).json({ success: true, count: 0, data: [] });
     }
 
-    const roleCodes = [...new Set(candidates.map((c) => c.roleCode))];
-    if (roleCodes.length > 1) {
-      return res.status(400).json({ success: false, message: 'Selected candidates must belong to the same role code for analysis.' });
+    const roleCodes = [...new Set(candidates.map((c) => (c.roleCode || '').toUpperCase().trim()))];
+    if (roleCodes.length === 0 || roleCodes[0] === '' || roleCodes.length > 1) {
+      const found = roleCodes.filter((r) => r !== '').join(', ') || 'none';
+      return res.status(400).json({ success: false, message: `Selected candidates must belong to the same role code for analysis. Found: ${found}.` });
     }
 
     const roleCode = roleCodes[0];
