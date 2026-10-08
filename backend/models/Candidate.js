@@ -26,7 +26,7 @@ const candidateSchema = new mongoose.Schema({
     type: String,
     enum: [
       'Naukri Response',
-      'Information Form',
+      'Information Form Response',
       'Interview 1',
       'Interview 1 Shortlisted',
       'Interview 2',
@@ -41,7 +41,7 @@ const candidateSchema = new mongoose.Schema({
       'Selected',
       'Rejected'
     ],
-    default: 'Naukri Response'
+    default: 'Information Form Response'
   },
   generalRemarks: { type: String, default: '' },
   assessmentRemarks: { type: String, default: '' },
@@ -60,10 +60,10 @@ const candidateSchema = new mongoose.Schema({
       completedAt: { type: Date, default: Date.now }
     }
   ],
-  // Independent assessment status — distinct from the pipeline `status` above.
-  // Tracks how the candidate is doing in evaluation specifically (SRD 3.8).
-   assessmentStatus: { type: String, enum: ['Selected', 'Rejected', 'Not Appeared', 'Rescheduled', 'Not interested', 'Refered for other position'], default: 'Not interested' }, // Slack channel name the candidate was last routed to
-    cvScreening: { type: String, enum: ['', 'Select', 'Reject', 'Refered for other position'], default: '' },
+   // Independent assessment status — distinct from the pipeline `status` above.
+   // Tracks how the candidate is doing in evaluation specifically (SRD 3.8).
+    assessmentStatus: { type: String, enum: ['Not Set', 'Selected', 'Rejected', 'Not Appeared', 'Rescheduled', 'Not interested', 'Refered for other position'], default: 'Not Set' },
+    cvScreening: { type: String, enum: ['Not Set', 'Selected', 'Rejected', 'Refered for other position'], default: 'Not Set' },
    interviewRounds: { type: mongoose.Schema.Types.Mixed, default: {} },
    joiningDateTentative: { type: Date, default: null },
    joiningDateConfirm: { type: Date, default: null },

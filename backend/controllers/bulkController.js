@@ -4,8 +4,7 @@ const Role = require('../models/Role');
 
 const VALID_EMP_TYPES = ['Full-Time', 'Part-Time', 'Contract', 'Internship'];
 const VALID_STATUSES = [
-  'Naukri Response',
-  'Information Form',
+  'Information Form Response',
   'Interview 1',
   'Interview 1 Shortlisted',
   'Interview 2',
@@ -144,7 +143,7 @@ exports.bulkImportCandidates = async (req, res) => {
       }
 
       const employmentType = VALID_EMP_TYPES.includes(row.employmentType) ? row.employmentType : 'Full-Time';
-      const status = VALID_STATUSES.includes(row.status) ? row.status : 'Naukri Response';
+      const status = VALID_STATUSES.includes(row.status) ? row.status : 'Information Form Response';
       const skills = row.skills ? row.skills.split(';').map((s) => s.trim()).filter(Boolean) : [];
 
       try {
@@ -241,7 +240,7 @@ exports.bulkImportWithRole = async (req, res) => {
       }
 
       const employmentType = VALID_EMP_TYPES.includes(row.employmentType) ? row.employmentType : 'Full-Time';
-      const status = VALID_STATUSES.includes(row.status) ? row.status : 'Naukri Response';
+      const status = VALID_STATUSES.includes(row.status) ? row.status : 'Information Form Response';
       const skills = row.skills ? row.skills.split(';').map((s) => s.trim()).filter(Boolean) : [];
 
       try {

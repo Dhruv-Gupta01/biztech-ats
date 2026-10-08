@@ -2,8 +2,7 @@ const Candidate = require('../models/Candidate');
 const Role = require('../models/Role');
 
 const STATUS_ORDER = [
-  'Naukri Response',
-  'Information Form',
+  'Information Form Response',
   'Interview 1',
   'Interview 1 Shortlisted',
   'Interview 2',
@@ -19,9 +18,8 @@ const STATUS_ORDER = [
   'Rejected'
 ];
 const STATUS_COLORS = {
-  'Naukri Response': '#6B7280',
-  'Information Form': 'var(--blue)',
-  'Interview 1': 'var(--amber)',
+  'Information Form Response': '#6B7280',
+  'Interview 1': 'var(--blue)',
   'Interview 1 Shortlisted': 'var(--purple)',
   'Interview 2': 'var(--amber)',
   'Interview 2 Shortlisted': 'var(--purple)',

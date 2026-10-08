@@ -12,8 +12,7 @@ const typeLabel = (t) => (t === 'Contract' ? 'Contractual' : t === 'Part-Time' ?
 const money = (n) => (n ? `₹${(n / 100000).toFixed(1)}L` : '—');
 
 const STATUS_OPTIONS = [
-  'Naukri Response',
-  'Information Form',
+  'Information Form Response',
   'Interview 1',
   'Interview 1 Shortlisted',
   'Interview 2',
@@ -29,12 +28,12 @@ const STATUS_OPTIONS = [
   'Rejected'
 ];
 
-const ASSESSMENT_STATUSES = ['Selected', 'Rejected', 'Not Appeared', 'Rescheduled', 'Not interested', 'Refered for other position'];
-const INTERVIEW_OPTIONS = ['Selected', 'Rejected', 'Not Appeared', 'Rescheduled', 'Not interested', 'Refered for other position'];
-const CV_SCREENING_OPTIONS = ['Selected', 'Rejected', 'Refered for other position'];
+const ASSESSMENT_STATUSES = ['Not Set', 'Selected', 'Rejected', 'Not Appeared', 'Rescheduled', 'Not interested', 'Refered for other position'];
+const INTERVIEW_OPTIONS = ['Not set', 'Selected', 'Rejected', 'Not Appeared', 'Rescheduled', 'Not interested', 'Refered for other position'];
+const CV_SCREENING_OPTIONS = ['Not Set', 'Selected', 'Rejected', 'Refered for other position'];
 
 const SAMPLE_CSV = `fullName,email,phone,location,roleCode,employmentType,yearsOfExperience,ctcCurrent,ctcExpected,noticePeriod,skills,status,source
-Amit Kumar,amit.kumar@example.com,9812345670,Delhi,BTA-ENG-01,Full-Time,3,800000,1100000,30 days,React;Node.js;MongoDB,Information Form,CSV Import
+Amit Kumar,amit.kumar@example.com,9812345670,Delhi,BTA-ENG-01,Full-Time,3,800000,1100000,30 days,React;Node.js;MongoDB,Information Form Response,CSV Import
 Sara Khan,sara.khan@example.com,9812345671,Pune,BTA-DS-01,Contract,5,1500000,1900000,15 days,Python;SQL,Interview 1,CSV Import
 `;
 
@@ -102,8 +101,20 @@ function CandidatePool() {
 
   const saveCvScreening = async (id, value) => {
     try {
-      await updateCandidate(id, { cvScreening: value || '', changedBy: user?.fullName });
-      setCandidates((prev) => prev.map((c) => (c._id === id ? { ...c, cvScreening: value || '' } : c)));
+      const normalizedValue = value || 'Not Set';
+      await updateCandidate(id, { cvScreening: normalizedValue, changedBy: user?.fullName });
+      setCandidates((prev) => {
+        const updated = prev.map((c) => (c._id === id ? { ...c, cvScreening: normalizedValue } : c));
+        const candidate = updated.find((c) => c._id === id);
+        if (candidate) {
+          const effective = computeEffectiveStatus(candidate);
+          if (effective && effective !== candidate.status) {
+            updateCandidate(id, { status: effective, changedBy: user?.fullName });
+            return updated.map((c) => (c._id === id ? { ...c, status: effective } : c));
+          }
+        }
+        return updated;
+      });
     } catch (err) {
       console.error('Failed to save CV screening:', err);
     }
@@ -111,8 +122,19 @@ function CandidatePool() {
 
   const saveAssessmentStatus = async (id, status) => {
     try {
-      const res = await updateCandidate(id, { assessmentStatus: status, changedBy: user?.fullName });
-      setCandidates((prev) => prev.map((c) => (c._id === id ? res.data : c)));
+      await updateCandidate(id, { assessmentStatus: status, changedBy: user?.fullName });
+      setCandidates((prev) => {
+        const updated = prev.map((c) => (c._id === id ? { ...c, assessmentStatus: status } : c));
+        const candidate = updated.find((c) => c._id === id);
+        if (candidate) {
+          const effective = computeEffectiveStatus(candidate);
+          if (effective && effective !== candidate.status) {
+            updateCandidate(id, { status: effective, changedBy: user?.fullName });
+            return updated.map((c) => (c._id === id ? { ...c, status: effective } : c));
+          }
+        }
+        return updated;
+      });
     } catch (err) {
       console.error('Failed to save assessment status:', err);
     }
@@ -123,10 +145,82 @@ function CandidatePool() {
       const candidate = candidates.find((x) => x._id === id);
       const updated = candidate ? (candidate.interviewRounds || {}) : {};
       await updateCandidate(id, { interviewRounds: { ...updated, [roundName]: value }, changedBy: user?.fullName });
-      setCandidates((prev) => prev.map((c) => (c._id === id ? { ...c, interviewRounds: { ...c.interviewRounds, [roundName]: value } } : c)));
+      setCandidates((prev) => {
+        const next = prev.map((c) => (c._id === id ? { ...c, interviewRounds: { ...c.interviewRounds, [roundName]: value } } : c));
+        const candidate = next.find((c) => c._id === id);
+        if (candidate) {
+          const effective = computeEffectiveStatus(candidate);
+          if (effective && effective !== candidate.status) {
+            updateCandidate(id, { status: effective, changedBy: user?.fullName });
+            return next.map((c) => (c._id === id ? { ...c, status: effective } : c));
+          }
+        }
+        return next;
+      });
     } catch (err) {
       console.error('Failed to save interview round:', err);
     }
+  };
+
+  const computeEffectiveStatus = (candidate) => {
+    const assessmentStatus = candidate.assessmentStatus;
+    const interviewRounds = candidate.interviewRounds || {};
+    const cvScreening = candidate.cvScreening;
+
+    if (assessmentStatus && assessmentStatus !== 'Not Set') {
+      return assessmentStatus;
+    }
+
+    const interviewValues = Object.values(interviewRounds);
+    const hasInterviewValue = interviewValues.some((v) => v && v !== 'Not set');
+    if (hasInterviewValue) {
+      for (let i = interviewValues.length - 1; i >= 0; i--) {
+        const v = interviewValues[i];
+        if (v && v !== 'Not set') {
+          return v;
+        }
+      }
+    }
+
+    if (cvScreening && cvScreening !== 'Not Set') {
+      return cvScreening;
+    }
+
+    return candidate.status;
+  };
+
+  const getStatusSource = (candidate) => {
+    const assessmentStatus = candidate.assessmentStatus;
+    const interviewRounds = candidate.interviewRounds || {};
+    const cvScreening = candidate.cvScreening;
+
+    if (assessmentStatus && assessmentStatus !== 'Not Set') {
+      return 'Assessment Status';
+    }
+
+    const interviewValues = Object.values(interviewRounds);
+    const hasInterviewValue = interviewValues.some((v) => v && v !== 'Not set');
+    if (hasInterviewValue) {
+      for (let i = interviewValues.length - 1; i >= 0; i--) {
+        const v = interviewValues[i];
+        if (v && v !== 'Not set') {
+          return `Interview${interviewRounds && Object.keys(interviewRounds).length > 1 ? ' Round' : ''}`;
+        }
+      }
+    }
+
+    if (cvScreening && cvScreening !== 'Not Set') {
+      return 'CV Screening';
+    }
+
+    return '';
+  };
+
+  const getStatusDisplay = (candidate) => {
+    const source = getStatusSource(candidate);
+    const effective = computeEffectiveStatus(candidate);
+    if (!source) return effective;
+    return `${source} ${effective}`;
   };
 
   const handleReferToOtherRole = async (candidateId, newRoleCode) => {
@@ -159,6 +253,13 @@ function CandidatePool() {
           const updated = res.data.find((c) => c._id === prev._id);
           return updated || prev;
         });
+        const initialScores = {};
+        res.data.forEach((c) => {
+          if (c.score && c.score.suitabilityRating != null) {
+            initialScores[c._id] = { score: c.score.suitabilityRating, breakdown: null };
+          }
+        });
+        setAnalyzerScores(initialScores);
       })
       .catch((err) => { console.error('[CandidatePool] fetchCandidates failed:', err); setLoadError(`Could not load candidates: ${err.message}`); })
       .finally(() => setLoading(false));
@@ -334,8 +435,9 @@ function CandidatePool() {
           res.data.forEach((item) => {
             scoreMap[item.candidateId] = { score: item.score, breakdown: item.breakdown };
           });
-          console.log('[Analyzer] updating scores', scoreMap);
+          console.log('[Analyzer] updating local scores', scoreMap);
           setAnalyzerScores((prev) => ({ ...prev, ...scoreMap }));
+          setAnalyzerError('');
         }
       }
     } catch (err) {
@@ -344,6 +446,30 @@ function CandidatePool() {
     } finally {
       console.log('[Analyzer] finishing, analyzing=false');
       setAnalyzing(false);
+    }
+  };
+
+  const saveAnalyzerScores = async () => {
+    setAnalyzerError('');
+    try {
+      const selectedScores = selectedIds.map((id) => ({ id, score: analyzerScores[id] })).filter((s) => s.score != null);
+      if (selectedScores.length === 0) {
+        setAnalyzerError('No analyzer scores to save. Run Resume Analyzer first.');
+        return;
+      }
+      const savePromises = selectedScores.map((s) =>
+        updateCandidate(s.id, {
+          score: { suitabilityRating: s.score.score, scoredAt: new Date().toISOString() },
+          changedBy: user?.fullName
+        })
+      );
+      await Promise.all(savePromises);
+      console.log('[Analyzer] scores saved to backend');
+      await loadCandidates();
+      setAnalyzerError('');
+    } catch (saveErr) {
+      console.error('[Analyzer] failed to save scores:', saveErr);
+      setAnalyzerError('Could not save scores. Please try again.');
     }
   };
 
@@ -428,6 +554,7 @@ function CandidatePool() {
         <input ref={csvInputRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleImportFile} />
         <button className="btn-primary" onClick={triggerImport} disabled={importing}>{importing ? 'Importing...' : '⭱ Import CSV'}</button>
         <button className="btn-secondary" onClick={runBulkAnalyze} disabled={analyzing || !filters.roleCode || selectedIds.length === 0} title={!filters.roleCode ? 'Select a specific Role Code' : ''}>{analyzing ? 'Analyzing...' : 'Resume Analyzer'}</button>
+        <button className="btn-secondary" onClick={saveAnalyzerScores} disabled={selectedIds.length === 0 || Object.keys(analyzerScores).length === 0} title="Save analyzer scores for selected candidates">💾 Save Scores</button>
       </div>
 
       <div className="filters-row" style={{ alignItems: 'center' }}>
@@ -533,31 +660,29 @@ function CandidatePool() {
                              </button>
                            )}
                          </td>
-                        <td>
-                          <select
-                            value={cvScreeningDraft[c._id] ?? c.cvScreening ?? ''}
-                            onChange={(e) => {
-                              const val = e.target.value || '';
-                              setCvScreeningDraft((prev) => ({ ...prev, [c._id]: val }));
-                              saveCvScreening(c._id, val);
-                            }}
-                            style={{ padding: '2px 6px', fontSize: 12, borderRadius: 4, border: '1px solid var(--border)' }}
-                          >
-                            <option value="">—</option>
-                            {CV_SCREENING_OPTIONS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
-                          </select>
-                        </td>
-                        {interviewRounds.map((round) => (
-                          <td key={round}>
-                            <select
-                              value={(c.interviewRounds || {})[round] || ''}
-                              onChange={(e) => saveInterviewRound(c._id, round, e.target.value)}
-                              style={{ padding: '2px 6px', fontSize: 11, borderRadius: 4, border: '1px solid var(--border)', minWidth: 120 }}
-                            >
-                              <option value="">Not set</option>
-                              {INTERVIEW_OPTIONS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
-                            </select>
-                            {(c.interviewRounds || {})[round] === 'Refered for other position' && (
+                         <td>
+                           <select
+                              value={cvScreeningDraft[c._id] ?? (c.cvScreening || 'Not Set')}
+                             onChange={(e) => {
+                               const val = e.target.value || 'Not Set';
+                               setCvScreeningDraft((prev) => ({ ...prev, [c._id]: val }));
+                               saveCvScreening(c._id, val);
+                             }}
+                             style={{ padding: '2px 6px', fontSize: 12, borderRadius: 4, border: '1px solid var(--border)' }}
+                           >
+                             {CV_SCREENING_OPTIONS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                           </select>
+                         </td>
+                         {interviewRounds.map((round) => (
+                           <td key={round}>
+                             <select
+                               value={(c.interviewRounds || {})[round] || 'Not set'}
+                               onChange={(e) => saveInterviewRound(c._id, round, e.target.value)}
+                               style={{ padding: '2px 6px', fontSize: 11, borderRadius: 4, border: '1px solid var(--border)', minWidth: 120 }}
+                             >
+                               {INTERVIEW_OPTIONS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                             </select>
+                             {(c.interviewRounds || {})[round] === 'Refered for other position' && (
                               <select
                                 value={referToOtherRole[c._id] || ''}
                                 onChange={(e) => handleReferToOtherRole(c._id, e.target.value)}
@@ -578,17 +703,17 @@ function CandidatePool() {
                             <span style={{ color: 'var(--text-500)', fontSize: 12 }}>—</span>
                           )}
                         </td>
-                        <td><StatusBadge status={c.status} /></td>
-                        <td>
-                          <select
-                            value={c.assessmentStatus || ''}
-                            onChange={(e) => saveAssessmentStatus(c._id, e.target.value)}
-                            className={assessmentBadgeClass(c.assessmentStatus)}
-                            style={{ border: '1px solid var(--border)', background: 'transparent', padding: '2px 6px', fontSize: 12, cursor: 'pointer', borderRadius: 4, minWidth: 140, color: '#000' }}
-                          >
-                            {ASSESSMENT_STATUSES.map((s) => <option key={s}>{s}</option>)}
-                          </select>
-                        </td>
+                         <td><StatusBadge status={computeEffectiveStatus(c)} label={getStatusDisplay(c)} /></td>
+                         <td>
+                           <select
+                             value={c.assessmentStatus || 'Not Set'}
+                             onChange={(e) => saveAssessmentStatus(c._id, e.target.value)}
+                             className={assessmentBadgeClass(c.assessmentStatus)}
+                             style={{ border: '1px solid var(--border)', background: 'transparent', padding: '2px 6px', fontSize: 12, cursor: 'pointer', borderRadius: 4, minWidth: 140, color: '#000' }}
+                           >
+                             {ASSESSMENT_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                           </select>
+                         </td>
                         <td>{c.slackGroup || '—'}</td>
                       </tr>
                    </React.Fragment>

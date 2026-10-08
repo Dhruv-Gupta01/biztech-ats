@@ -124,8 +124,8 @@ async function syncFormResponses() {
         };
 
         const currentStatus = candidate.status;
-        if (!currentStatus || currentStatus === 'Naukri Response' || currentStatus === '') {
-          updates.$set.status = 'Information Form';
+        if (!currentStatus || currentStatus === 'Information Form Response' || currentStatus === '') {
+          updates.$set.status = 'Information Form Response';
         }
 
         await Candidate.updateOne({ _id: candidate._id }, updates);

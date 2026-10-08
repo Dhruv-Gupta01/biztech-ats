@@ -18,8 +18,7 @@ const drive = require('./googleDriveService');
 
 const VALID_EMP_TYPES = ['Full-Time', 'Part-Time', 'Contract', 'Internship'];
 const VALID_STATUSES = [
-  'Naukri Response',
-  'Information Form',
+  'Information Form Response',
   'Interview 1',
   'Interview 1 Shortlisted',
   'Interview 2',
@@ -193,7 +192,7 @@ function validateRow(row, knownRoleCodes) {
   if (reasons.length > 0) return { ok: false, reasons };
 
   const employmentType = VALID_EMP_TYPES.includes(row.employmentType) ? row.employmentType : 'Full-Time';
-      const status = VALID_STATUSES.includes(row.status) ? row.status : 'Naukri Response';
+      const status = VALID_STATUSES.includes(row.status) ? row.status : 'Information Form Response';
   const skills = row.skills ? row.skills.split(';').map((s) => s.trim()).filter(Boolean) : [];
 
   return {

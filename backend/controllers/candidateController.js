@@ -267,7 +267,7 @@ exports.scoreCandidate = async (req, res) => {
     const candidate = await Candidate.findById(req.params.id);
     if (!candidate) return res.status(404).json({ success: false, message: 'Candidate not found.' });
 
-    const nextStatus = status || (candidate.status === 'Naukri Response' ? 'Information Form' : candidate.status);
+    const nextStatus = status || (candidate.status === 'Naukri Response' ? 'Information Form Response' : candidate.status);
     const nextAssessmentStatus = assessmentStatus || candidate.assessmentStatus;
     const changes = { status: nextStatus, assessmentStatus: nextAssessmentStatus };
     if (assessmentRemarks) changes.assessmentRemarks = assessmentRemarks;
@@ -289,7 +289,7 @@ exports.scoreCandidate = async (req, res) => {
 
 // PATCH /api/candidates/:id
 // Generic field update (role reassignment, general remarks, manual status change,
-// Slack group tag, etc.) — separate from scoreCandidate since not every edit
+// Slack channel tag, etc.) — separate from scoreCandidate since not every edit
 // involves re-scoring. Every changed tracked field is logged to candidate.history.
 exports.updateCandidate = async (req, res) => {
   try {
@@ -298,7 +298,24 @@ exports.updateCandidate = async (req, res) => {
     if (!candidate) return res.status(404).json({ success: false, message: 'Candidate not found.' });
 
     const newHistoryEntries = buildHistoryEntries(candidate, changes, changedBy);
-    Object.assign(candidate, changes);
+    for (const [key, value] of Object.entries(changes)) {
+      if (key === 'status' && value === 'Naukri Response') {
+        changes[key] = 'Information Form Response';
+      }
+      if (key === 'cvScreening' && value === '') {
+        changes[key] = 'Not Set';
+      }
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        const existing = candidate[key];
+        if (existing && typeof existing === 'object' && !Array.isArray(existing)) {
+          candidate[key] = { ...existing, ...value };
+        } else {
+          candidate[key] = { ...value };
+        }
+      } else {
+        candidate[key] = value;
+      }
+    }
     candidate.history.push(...newHistoryEntries);
     candidate.updatedAt = new Date();
     await candidate.save();
@@ -469,7 +486,7 @@ exports.bulkUploadResumes = async (req, res) => {
           skills,
           resumeData: file.buffer,
           resumeText: parsedData.resumeText || '',
-          status: 'Naukri Response',
+           status: 'Information Form Response',
           source: 'Resume Upload'
         });
         candidate.resumeUrl = `/api/candidates/${candidate._id}/resume`;

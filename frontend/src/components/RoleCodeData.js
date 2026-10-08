@@ -3,8 +3,7 @@ import { fetchCandidates, fetchRoles, updateCandidate } from '../api/api';
 import CandidateProfileModal from './CandidateProfileModal';
 
 const STATUS_OPTIONS = [
-  'Naukri Response',
-  'Information Form',
+  'Information Form Response',
   'Interview 1',
   'Interview 1 Shortlisted',
   'Interview 2',
@@ -167,7 +166,7 @@ function RoleCodeData() {
                     <td>{c.phone || '—'}</td>
                     <td>{c.email || '—'}</td>
                     <td>
-                      <span className="badge badge-applied">{c.status || 'Naukri Response'}</span>
+                       <span className="badge badge-applied">{c.status || 'Information Form Response'}</span>
                     </td>
                     <td style={{ minWidth: 220, maxWidth: 320 }}>
                       <textarea

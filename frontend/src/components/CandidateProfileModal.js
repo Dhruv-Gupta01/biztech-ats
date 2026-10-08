@@ -198,7 +198,7 @@ function CandidateProfileModal({ candidate, role, onClose, onSaved }) {
                 <div>
                   <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-500)' }}>Status</label>
                   <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid var(--border)', marginTop: 4 }}>
-                    {['Naukri Response','Information Form','Interview 1','Interview 1 Shortlisted','Interview 2','Interview 2 Shortlisted','Assessment 1','Assessment 1 Shortlisted','Assessment 1 Passed','Assessment 2','Assessment 2 Shortlisted','Assessment 2 Passed','Final Round Shortlisted','Selected','Rejected'].map((s) => <option key={s} value={s}>{s}</option>)}
+                     {['Information Form Response','Interview 1','Interview 1 Shortlisted','Interview 2','Interview 2 Shortlisted','Assessment 1','Assessment 1 Shortlisted','Assessment 1 Passed','Assessment 2','Assessment 2 Shortlisted','Assessment 2 Passed','Final Round Shortlisted','Selected','Rejected'].map((s) => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
               </div>

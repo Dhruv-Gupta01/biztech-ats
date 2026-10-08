@@ -7,9 +7,9 @@ dotenv.config();
 const MONGO_URI = process.env.MONGO_URI;
 
 const STATUS_MAPPING = {
-  'Applied': 'Naukri Response',
-  'Screened': 'Naukri Response',
-  'Shortlisted': 'Information Form',
+  'Applied': 'Information Form Response',
+  'Screened': 'Information Form Response',
+  'Shortlisted': 'Information Form Response',
   'Interviewing': 'Interview 1',
   'Hired': 'Selected',
   'Rejected': 'Rejected'

@@ -20,8 +20,7 @@ function buildFormLinkPreview(email) {
 }
 
 const STATUS_OPTIONS = [
-  'Naukri Response',
-  'Information Form',
+  'Information Form Response',
   'Interview 1',
   'Interview 1 Shortlisted',
   'Interview 2',
