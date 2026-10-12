@@ -5,11 +5,24 @@ import { useAuth } from '../auth/AuthContext';
 import {
   fetchCandidates, bulkImportCandidates, fetchSlackMappings, assignCandidatesToSlack,
   fetchRoles, fetchFormSyncStatus, runFormSyncNow, analyzeCandidatesBulk,
-  updateCandidate, deleteCandidateRecord
+  updateCandidate, deleteCandidateRecord, fetchProjects, createProject,
+  checkCalendlyStatus
 } from '../api/api';
+import { isFreelanceRoleCode, isFreelanceFilter, effectiveEmploymentType } from '../utils/employment';
 
-const typeLabel = (t) => (t === 'Contract' ? 'Contractual' : t === 'Part-Time' ? 'Part Time' : t === 'Internship' ? 'Internship' : 'Full Time');
+const typeLabel = (t) => (t === 'Contract' ? 'Contractual' : t === 'Part-Time' ? 'Part Time' : t === 'Internship' ? 'Internship' : t === 'FREELANCE CODING' ? 'Freelance Coding' : 'Full Time');
 const money = (n) => (n ? `₹${(n / 100000).toFixed(1)}L` : '—');
+
+const SCREENING_INTERVIEW_OPTIONS = ['Pass', 'Fail', 'Not Appeared', 'Rescheduled', 'Not interested', 'Referred to another position'];
+const CALENDLY_SENT_OPTIONS = ['Sent', 'Not Sent'];
+const CALENDLY_STATUS_OPTIONS = ['Booked', 'Not Booked'];
+const NDA_ICA_OPTIONS = ['Sent', 'Not Sent', 'Signed', 'Not Signed', 'Doubt', 'Not Interested'];
+const SLACK_STATUS_OPTIONS = ['Joined', 'Not Joined', 'Not Interested'];
+const BOOTCAMP_ATTEMPTS_OPTIONS = ['Attempt 1', 'Attempt 2', 'Attempt 3'];
+const BOOTCAMP_STATUS_OPTIONS = ['Pass', 'Fail', 'Full Fail', 'Not Active', 'Active'];
+const ONBOARDING_OPTIONS = ['Sent', 'Not Sent', 'Not Interested', 'Done'];
+const PROJECT_STATUS_OPTIONS = ['On Hold', 'Complete', 'Not Active', 'In Pipeline'];
+const DEFAULT_PROJECTS = ['Terminus', 'Snorkle', 'Alegion'];
 
 const STATUS_OPTIONS = [
   'Information Form Response',
@@ -25,7 +38,11 @@ const STATUS_OPTIONS = [
   'Assessment 2 Passed',
   'Final Round Shortlisted',
   'Selected',
-  'Rejected'
+  'Rejected',
+  'Not Appeared',
+  'Rescheduled',
+  'Refered for other position',
+  'Not interested'
 ];
 
 const ASSESSMENT_STATUSES = ['Not Set', 'Selected', 'Rejected', 'Not Appeared', 'Rescheduled', 'Not interested', 'Refered for other position'];
@@ -49,7 +66,18 @@ function assessmentBadgeClass(assessmentStatus) {
   return 'badge ' + (map[assessmentStatus] || 'badge-applied');
 }
 
-function toCSV(rows) {
+function toCSV(rows, freelance = false) {
+  if (freelance) {
+    const headers = ['Name', 'Email', 'Role Code', 'Location', 'Analyzer Score', 'Screening Interview', 'Calendly Link Sent', 'Calendly Link Status', 'NDA & ICA', 'Slack', 'Bootcamp Attempts', 'Bootcamp Status', 'Onboarding', 'Project', 'Project Status'];
+    const lines = rows.map((c) => [
+      c.fullName, c.email, c.roleCode, c.location || '',
+      c.score?.suitabilityRating ?? '', c.screeningInterview || '', c.calendlyLinkSent || '',
+      c.calendlyLinkStatus || '', c.ndaIca || '', c.slackStatus || '',
+      c.bootcampAttempts || '', c.bootcampStatus || '', c.onboarding || '',
+      c.project || '', c.projectStatus || ''
+    ].join(','));
+    return [headers.join(','), ...lines].join('\n');
+  }
   const headers = ['Name', 'Email', 'Role Code', 'Type', 'Location', 'CTC Current', 'CTC Expected', 'Status', 'Assessment Status', 'Suitability', 'Updated'];
   const lines = rows.map((c) => [
     c.fullName, c.email, c.roleCode, typeLabel(c.employmentType), c.location || '',
@@ -89,6 +117,97 @@ function CandidatePool() {
   const [interviewRounds, setInterviewRounds] = useState(['Interview']);
   const [cvScreeningDraft, setCvScreeningDraft] = useState({});
   const [referToOtherRole, setReferToOtherRole] = useState({});
+  const [projects, setProjects] = useState(DEFAULT_PROJECTS);
+  const [newProject, setNewProject] = useState('');
+  const [calendlyChecking, setCalendlyChecking] = useState('');
+  const [calendlyBulkChecking, setCalendlyBulkChecking] = useState(false);
+  const [calendlyBulkResult, setCalendlyBulkResult] = useState(null);
+  const [freelanceSaveError, setFreelanceSaveError] = useState('');
+
+  useEffect(() => {
+    fetchProjects().then((res) => {
+      const list = (res.data || []).map((p) => p.name).filter(Boolean);
+      setProjects([...DEFAULT_PROJECTS, ...list.filter((p) => !DEFAULT_PROJECTS.includes(p))]);
+    }).catch(() => {});
+  }, []);
+
+  const checkCalendlyForCandidate = async (id) => {
+    setCalendlyChecking(id);
+    try {
+      const res = await checkCalendlyStatus(id);
+      if (res.data) {
+        setCandidates((prev) => prev.map((c) => (c._id === id ? { ...c, ...res.data } : c)));
+      }
+    } catch (err) {
+      console.error('Calendly check failed:', err);
+    } finally {
+      setCalendlyChecking('');
+    }
+  };
+
+  // Bulk variant: runs the same per-candidate Calendly lookup for every selected
+  // candidate. Runs sequentially so we don't hammer the Calendly API and trip
+  // rate limits, and reports how many were actually updated.
+  const checkCalendlyForSelected = async () => {
+    if (selectedIds.length === 0) return;
+    setCalendlyBulkChecking(true);
+    setCalendlyBulkResult(null);
+    const results = { booked: 0, notBooked: 0, skipped: 0, failed: 0, reasons: [] };
+
+    for (const id of selectedIds) {
+      const candidate = candidates.find((c) => c._id === id);
+      try {
+        const res = await checkCalendlyStatus(id);
+        // `calendly` is only present when the API couldn't answer — keep the
+        // recruiter's manual value untouched in that case.
+        if (res.calendly && res.calendly.available === false) {
+          results.skipped++;
+          if (results.reasons.length < 5) results.reasons.push(`${candidate?.fullName || id}: ${res.calendly.reason}`);
+        } else if (res.data?.calendlyLinkStatus === 'Booked') {
+          results.booked++;
+        } else if (res.data?.calendlyLinkStatus === 'Not Booked') {
+          results.notBooked++;
+        } else {
+          results.skipped++;
+        }
+        if (res.data) {
+          setCandidates((prev) => prev.map((c) => (c._id === id ? { ...c, ...res.data } : c)));
+        }
+      } catch (err) {
+        results.failed++;
+        if (results.reasons.length < 5) results.reasons.push(`${candidate?.fullName || id}: ${err.message}`);
+      }
+    }
+
+    setCalendlyBulkResult(results);
+    setCalendlyBulkChecking(false);
+  };
+
+  const saveFreelanceField = async (id, field, value) => {
+    try {
+      await updateCandidate(id, { [field]: value, changedBy: user?.fullName });
+      setCandidates((prev) => prev.map((c) => (c._id === id ? { ...c, [field]: value } : c)));
+    } catch (err) {
+      // Surface the failure instead of silently reverting the dropdown.
+      console.error(`Failed to save ${field}:`, err);
+      setFreelanceSaveError(`Could not save ${field}: ${err.message}`);
+      setTimeout(() => setFreelanceSaveError(''), 8000);
+    }
+  };
+
+  const addProject = async () => {
+    const name = newProject.trim();
+    if (!name) return;
+    if (projects.includes(name)) { setNewProject(''); return; }
+    try {
+      await createProject({ name });
+      setProjects((prev) => [...prev, name]);
+      setNewProject('');
+    } catch (err) {
+      setProjects((prev) => [...prev, name]);
+      setNewProject('');
+    }
+  };
 
   const addInterviewRound = () => {
     const nextNum = interviewRounds.length + 1;
@@ -311,13 +430,20 @@ function CandidatePool() {
 
   const roleCodes = useMemo(() => roles.map((r) => r.code).sort(), [roles]);
 
+  // Freelance coding view activates when either the Employment Type filter is
+  // FREELANCE CODING or the selected Role Code starts with F (e.g. F-TYPESCRIPT).
+  const freelanceMode = isFreelanceFilter(filters.employmentType, filters.roleCode);
+
   const filtered = useMemo(() => {
     return candidates.filter((c) => {
-      if (filters.employmentType && c.employmentType !== filters.employmentType) return false;
+      // An F-prefixed role code always satisfies a FREELANCE CODING filter,
+      // regardless of the stored employmentType on the row.
+      if (filters.employmentType === 'FREELANCE CODING' && !isFreelanceRoleCode(c.roleCode) && c.employmentType !== 'FREELANCE CODING') return false;
+      if (filters.employmentType && filters.employmentType !== 'FREELANCE CODING' && effectiveEmploymentType(c) !== filters.employmentType) return false;
       if (query) {
         const q = query.toLowerCase();
         const haystack = [
-          c.fullName, c.email, c.phone, c.location, c.roleCode, c.employmentType, c.source,
+          c.fullName, c.email, c.phone, c.location, c.roleCode, c.employmentType, effectiveEmploymentType(c), c.source,
           ...(c.skills || []),
           String(c.yearsOfExperience || ''),
           String(c.ctcCurrent || ''),
@@ -330,10 +456,10 @@ function CandidatePool() {
   }, [candidates, filters.employmentType, query]);
 
   const exportCSV = () => {
-    const blob = new Blob([toCSV(filtered)], { type: 'text/csv' });
+    const blob = new Blob([toCSV(filtered, freelanceMode)], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'candidate_pool_export.csv'; a.click();
+    a.href = url; a.download = freelanceMode ? 'freelance_candidates_export.csv' : 'candidate_pool_export.csv'; a.click();
     URL.revokeObjectURL(url);
   };
 
@@ -523,6 +649,21 @@ function CandidatePool() {
       )}
       {deleteError && <div className="alert alert-error">⚠️ {deleteError}</div>}
       {analyzerError && <div className="alert alert-error">⚠️ {analyzerError}</div>}
+      {freelanceSaveError && <div className="alert alert-error">⚠️ {freelanceSaveError}</div>}
+      {calendlyBulkResult && (
+        <div className="alert alert-success">
+          ✅ Calendly check complete — Booked: {calendlyBulkResult.booked}, Not Booked: {calendlyBulkResult.notBooked}
+          {calendlyBulkResult.skipped > 0 && `, Skipped: ${calendlyBulkResult.skipped}`}
+          {calendlyBulkResult.failed > 0 && `, Failed: ${calendlyBulkResult.failed}`}
+          {calendlyBulkResult.reasons.length > 0 && (
+            <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+              {calendlyBulkResult.reasons.map((reason, i) => (
+                <li key={i} style={{ fontSize: 12.5 }}>{reason}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       {analyzing && <div className="alert">⏳ Resume Analyzer is running... Please wait while we analyze the selected candidates.</div>}
 
       <div className="filters-row">
@@ -536,6 +677,7 @@ function CandidatePool() {
           <option value="Contract">Contractual</option>
           <option value="Part-Time">Part Time</option>
           <option value="Internship">Internship</option>
+          <option value="FREELANCE CODING">Freelance Coding</option>
         </select>
         <select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}>
           <option value="">All statuses</option>
@@ -555,6 +697,16 @@ function CandidatePool() {
         <button className="btn-primary" onClick={triggerImport} disabled={importing}>{importing ? 'Importing...' : '⭱ Import CSV'}</button>
         <button className="btn-secondary" onClick={runBulkAnalyze} disabled={analyzing || !filters.roleCode || selectedIds.length === 0} title={!filters.roleCode ? 'Select a specific Role Code' : ''}>{analyzing ? 'Analyzing...' : 'Resume Analyzer'}</button>
         <button className="btn-secondary" onClick={saveAnalyzerScores} disabled={selectedIds.length === 0 || Object.keys(analyzerScores).length === 0} title="Save analyzer scores for selected candidates">💾 Save Scores</button>
+        {freelanceMode && (
+          <button
+            className="btn-secondary"
+            onClick={checkCalendlyForSelected}
+            disabled={selectedIds.length === 0 || calendlyBulkChecking}
+            title="Fetch booking status from Calendly for each selected candidate, then save it"
+          >
+            {calendlyBulkChecking ? 'Checking...' : '↻ Check Calendly (Selected)'}
+          </button>
+        )}
       </div>
 
       <div className="filters-row" style={{ alignItems: 'center' }}>
@@ -587,32 +739,53 @@ function CandidatePool() {
             <thead>
               <tr>
                 <th><input type="checkbox" onChange={toggleSelectAllFiltered} checked={filtered.length > 0 && filtered.every((c) => selectedIds.includes(c._id))} /></th>
-                <th>Candidate</th><th>Role Code</th><th>Type</th><th>Location</th>
-                <th>Current CTC</th><th>Expected CTC</th><th>Notice Period</th>
-                <th>Joining Date (Tentative)</th><th>Joining Date (Confirm)</th>
-                <th>CV Screening</th>
-                {interviewRounds.map((round) => (
-                  <th key={round}>
-                    {round}{' '}
-                    {interviewRounds.length > 1 && (
-                      <button
-                        onClick={() => removeInterviewRound(round)}
-                        style={{ fontSize: 10, padding: '2px 5px', background: 'var(--red)', color: 'white', border: 'none', borderRadius: 3, cursor: 'pointer' }}
-                        title={`Remove ${round}`}
-                      >×</button>
-                    )}
+                {freelanceMode ? (
+                  <>
+                    <th>Candidate</th><th>Role Code</th><th>Location</th>
+                    <th>Analyzer Score</th>
+                    <th>Screening Interview</th>
+                    <th>Calendly Link Sent</th>
+                    <th>Calendly Link Status</th>
+                    <th>NDA &amp; ICA</th>
+                    <th>Slack</th>
+                    <th>Bootcamp Attempts</th>
+                    <th>Bootcamp Status</th>
+                    <th>Onboarding</th>
+                    <th>Project</th>
+                    <th>Project Status</th>
+                  </>
+                ) : (
+                  <>
+                    <th>Candidate</th><th>Role Code</th><th>Type</th><th>Location</th>
+                    <th>Current CTC</th><th>Expected CTC</th><th>Notice Period</th>
+                    <th>Joining Date (Tentative)</th><th>Joining Date (Confirm)</th>
+                    <th>CV Screening</th>
+                    {interviewRounds.map((round) => (
+                      <th key={round}>
+                        {round}{' '}
+                        {interviewRounds.length > 1 && (
+                          <button
+                            onClick={() => removeInterviewRound(round)}
+                            style={{ fontSize: 10, padding: '2px 5px', background: 'var(--red)', color: 'white', border: 'none', borderRadius: 3, cursor: 'pointer' }}
+                            title={`Remove ${round}`}
+                          >×</button>
+                        )}
+                      </th>
+                    ))}
+                    <th>Analyzer Score</th><th>Status</th><th>Assessment Status</th>
+                    <th>Slack Group</th>
+                  </>
+                )}
+              </tr>
+              {!freelanceMode && (
+                <tr>
+                  <th colSpan="10"></th>
+                  <th colSpan={interviewRounds.length + 2} style={{ padding: 0, borderBottom: '1px solid var(--border)', textAlign: 'center', fontSize: 11, color: 'var(--text-500)' }}>
+                    + Add Interview Round
+                    <button onClick={addInterviewRound} style={{ fontSize: 11, padding: '2px 8px', background: 'var(--primary)', color: 'black', border: '2px solid black', borderRadius: 4, cursor: 'pointer', marginLeft: 6 }}>+</button>
                   </th>
-                ))}
-                <th>Analyzer Score</th><th>Status</th><th>Assessment Status</th>
-                <th>Slack Group</th>
-              </tr>
-              <tr>
-                <th colSpan="10"></th>
-                <th colSpan={interviewRounds.length + 2} style={{ padding: 0, borderBottom: '1px solid var(--border)', textAlign: 'center', fontSize: 11, color: 'var(--text-500)' }}>
-                  + Add Interview Round
-                  <button onClick={addInterviewRound} style={{ fontSize: 11, padding: '2px 8px', background: 'var(--primary)', color: 'black', border: '2px solid black', borderRadius: 4, cursor: 'pointer', marginLeft: 6 }}>+</button>
-                </th>
-              </tr>
+                </tr>
+              )}
             </thead>
             <tbody>
               {filtered.map((c) => {
@@ -625,105 +798,172 @@ function CandidatePool() {
                           <br /><small>{c.email}</small>
                         </td>
                         <td>{c.roleCode}</td>
-                        <td>{typeLabel(c.employmentType)}</td>
-                        <td>{c.location || '—'}</td>
-                        <td>{money(c.ctcCurrent)}</td>
-                        <td>{money(c.ctcExpected)}</td>
-                        <td>{c.noticePeriod || '—'}</td>
-                         <td>
-                           {editingDate.candidateId === c._id && editingDate.field === 'joiningDateTentative' ? (
-                             <input
-                               type="date"
-                               defaultValue={c.joiningDateTentative ? new Date(c.joiningDateTentative).toISOString().slice(0, 10) : ''}
-                               onBlur={(e) => saveJoiningDate(c._id, 'joiningDateTentative', e.target.value)}
-                               autoFocus
-                               style={{ width: '140px', padding: '4px 6px', fontSize: 12 }}
-                             />
-                           ) : (
-                             <button className="btn-secondary" onClick={() => startEditingDate(c._id, 'joiningDateTentative')} style={{ fontSize: 11.5, padding: '4px 8px' }}>
-                               {c.joiningDateTentative ? new Date(c.joiningDateTentative).toLocaleDateString() : 'Set date'}
-                             </button>
-                           )}
-                         </td>
-                    <td>
-                           {editingDate.candidateId === c._id && editingDate.field === 'joiningDateConfirm' ? (
-                             <input
-                               type="date"
-                               defaultValue={c.joiningDateConfirm ? new Date(c.joiningDateConfirm).toISOString().slice(0, 10) : ''}
-                               onBlur={(e) => saveJoiningDate(c._id, 'joiningDateConfirm', e.target.value)}
-                               autoFocus
-                               style={{ width: '140px', padding: '4px 6px', fontSize: 12 }}
-                             />
-                           ) : (
-                             <button className="btn-secondary" onClick={() => startEditingDate(c._id, 'joiningDateConfirm')} style={{ fontSize: 11.5, padding: '4px 8px' }}>
-                               {c.joiningDateConfirm ? new Date(c.joiningDateConfirm).toLocaleDateString() : 'Set date'}
-                             </button>
-                           )}
-                         </td>
-                         <td>
-                           <select
-                              value={cvScreeningDraft[c._id] ?? (c.cvScreening || 'Not Set')}
-                             onChange={(e) => {
-                               const val = e.target.value || 'Not Set';
-                               setCvScreeningDraft((prev) => ({ ...prev, [c._id]: val }));
-                               saveCvScreening(c._id, val);
-                             }}
-                             style={{ padding: '2px 6px', fontSize: 12, borderRadius: 4, border: '1px solid var(--border)' }}
-                           >
-                             {CV_SCREENING_OPTIONS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
-                           </select>
-                         </td>
-                         {interviewRounds.map((round) => (
-                           <td key={round}>
-                             <select
-                               value={(c.interviewRounds || {})[round] || 'Not set'}
-                               onChange={(e) => saveInterviewRound(c._id, round, e.target.value)}
-                               style={{ padding: '2px 6px', fontSize: 11, borderRadius: 4, border: '1px solid var(--border)', minWidth: 120 }}
-                             >
-                               {INTERVIEW_OPTIONS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
-                             </select>
-                             {(c.interviewRounds || {})[round] === 'Refered for other position' && (
+                        {freelanceMode ? (
+                          <>
+                            <td>{c.location || '—'}</td>
+                            <td>
+                              {analyzerScores[c._id] ? (
+                                <span style={{ fontWeight: 600, color: analyzerScores[c._id].score >= 7 ? 'var(--green)' : analyzerScores[c._id].score >= 4 ? 'var(--amber)' : 'var(--red)' }}>
+                                  {analyzerScores[c._id].score}/10
+                                </span>
+                              ) : (
+                                <span style={{ color: 'var(--text-500)', fontSize: 12 }}>—</span>
+                              )}
+                            </td>
+                            {[
+                              { field: 'screeningInterview', options: SCREENING_INTERVIEW_OPTIONS, label: 'Screening Interview' },
+                              { field: 'calendlyLinkSent', options: CALENDLY_SENT_OPTIONS, label: 'Calendly Link Sent' },
+                              { field: 'calendlyLinkStatus', options: CALENDLY_STATUS_OPTIONS, label: 'Calendly Link Status' },
+                              { field: 'ndaIca', options: NDA_ICA_OPTIONS, label: 'NDA & ICA' },
+                              { field: 'slackStatus', options: SLACK_STATUS_OPTIONS, label: 'Slack' },
+                              { field: 'bootcampAttempts', options: BOOTCAMP_ATTEMPTS_OPTIONS, label: 'Bootcamp Attempts' },
+                              { field: 'bootcampStatus', options: BOOTCAMP_STATUS_OPTIONS, label: 'Bootcamp Status' },
+                              { field: 'onboarding', options: ONBOARDING_OPTIONS, label: 'Onboarding' },
+                              { field: 'projectStatus', options: PROJECT_STATUS_OPTIONS, label: 'Project Status' }
+                            ].map(({ field, options }) => (
+                              <td key={field}>
+                                <select
+                                  value={c[field] || ''}
+                                  onChange={(e) => saveFreelanceField(c._id, field, e.target.value)}
+                                  style={{ padding: '2px 6px', fontSize: 11, borderRadius: 4, border: '1px solid var(--border)', minWidth: 110 }}
+                                >
+                                  <option value="">—</option>
+                                  {options.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                                </select>
+                                {field === 'calendlyLinkStatus' && (
+                                  <button
+                                    onClick={() => checkCalendlyForCandidate(c._id)}
+                                    disabled={calendlyChecking === c._id}
+                                    title="Fetch booking status from Calendly API (falls back to manual selection if not configured)"
+                                    style={{ display: 'block', marginTop: 4, fontSize: 10, padding: '2px 5px', cursor: 'pointer', borderRadius: 3, border: '1px solid var(--border)', background: 'transparent' }}
+                                  >
+                                    {calendlyChecking === c._id ? 'Checking...' : '↻ Check Calendly'}
+                                  </button>
+                                )}
+                              </td>
+                            ))}
+                            <td>
                               <select
-                                value={referToOtherRole[c._id] || ''}
-                                onChange={(e) => handleReferToOtherRole(c._id, e.target.value)}
-                                style={{ padding: '2px 6px', fontSize: 11, borderRadius: 4, border: '1px solid var(--border)', minWidth: 100, marginTop: 4 }}
+                                value={c.project || ''}
+                                onChange={(e) => saveFreelanceField(c._id, 'project', e.target.value)}
+                                style={{ padding: '2px 6px', fontSize: 11, borderRadius: 4, border: '1px solid var(--border)', minWidth: 110 }}
                               >
-                                <option value="">Select role...</option>
-                                {roleCodes.filter((code) => code !== c.roleCode).map((code) => <option key={code} value={code}>{code}</option>)}
+                                <option value="">—</option>
+                                {projects.map((p) => <option key={p} value={p}>{p}</option>)}
                               </select>
-                            )}
-                          </td>
-                        ))}
-                        <td>
-                          {analyzerScores[c._id] ? (
-                            <span style={{ fontWeight: 600, color: analyzerScores[c._id].score >= 7 ? 'var(--green)' : analyzerScores[c._id].score >= 4 ? 'var(--amber)' : 'var(--red)' }}>
-                              {analyzerScores[c._id].score}/10
-                            </span>
-                          ) : (
-                            <span style={{ color: 'var(--text-500)', fontSize: 12 }}>—</span>
-                          )}
-                        </td>
-                         <td><StatusBadge status={computeEffectiveStatus(c)} label={getStatusDisplay(c)} /></td>
-                         <td>
-                           <select
-                             value={c.assessmentStatus || 'Not Set'}
-                             onChange={(e) => saveAssessmentStatus(c._id, e.target.value)}
-                             className={assessmentBadgeClass(c.assessmentStatus)}
-                             style={{ border: '1px solid var(--border)', background: 'transparent', padding: '2px 6px', fontSize: 12, cursor: 'pointer', borderRadius: 4, minWidth: 140, color: '#000' }}
-                           >
-                             {ASSESSMENT_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-                           </select>
-                         </td>
-                        <td>{c.slackGroup || '—'}</td>
-                      </tr>
-                   </React.Fragment>
-                 );
-                })}
-              </tbody>
-            </table>
-          )}
-          {!loading && filtered.length === 0 && <p style={{ padding: 20, color: 'var(--text-500)' }}>No candidates match these filters.</p>}
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td>{typeLabel(effectiveEmploymentType(c))}</td>
+                            <td>{c.location || '—'}</td>
+                            <td>{money(c.ctcCurrent)}</td>
+                            <td>{money(c.ctcExpected)}</td>
+                            <td>{c.noticePeriod || '—'}</td>
+                             <td>
+                               {editingDate.candidateId === c._id && editingDate.field === 'joiningDateTentative' ? (
+                                 <input
+                                   type="date"
+                                   defaultValue={c.joiningDateTentative ? new Date(c.joiningDateTentative).toISOString().slice(0, 10) : ''}
+                                   onBlur={(e) => saveJoiningDate(c._id, 'joiningDateTentative', e.target.value)}
+                                   autoFocus
+                                   style={{ width: '140px', padding: '4px 6px', fontSize: 12 }}
+                                 />
+                               ) : (
+                                 <button className="btn-secondary" onClick={() => startEditingDate(c._id, 'joiningDateTentative')} style={{ fontSize: 11.5, padding: '4px 8px' }}>
+                                   {c.joiningDateTentative ? new Date(c.joiningDateTentative).toLocaleDateString() : 'Set date'}
+                                 </button>
+                               )}
+                             </td>
+                            <td>
+                               {editingDate.candidateId === c._id && editingDate.field === 'joiningDateConfirm' ? (
+                                 <input
+                                   type="date"
+                                   defaultValue={c.joiningDateConfirm ? new Date(c.joiningDateConfirm).toISOString().slice(0, 10) : ''}
+                                   onBlur={(e) => saveJoiningDate(c._id, 'joiningDateConfirm', e.target.value)}
+                                   autoFocus
+                                   style={{ width: '140px', padding: '4px 6px', fontSize: 12 }}
+                                 />
+                               ) : (
+                                 <button className="btn-secondary" onClick={() => startEditingDate(c._id, 'joiningDateConfirm')} style={{ fontSize: 11.5, padding: '4px 8px' }}>
+                                   {c.joiningDateConfirm ? new Date(c.joiningDateConfirm).toLocaleDateString() : 'Set date'}
+                                 </button>
+                               )}
+                             </td>
+                             <td>
+                               <select
+                                  value={cvScreeningDraft[c._id] ?? (c.cvScreening || 'Not Set')}
+                                 onChange={(e) => {
+                                   const val = e.target.value || 'Not Set';
+                                   setCvScreeningDraft((prev) => ({ ...prev, [c._id]: val }));
+                                   saveCvScreening(c._id, val);
+                                 }}
+                                 style={{ padding: '2px 6px', fontSize: 12, borderRadius: 4, border: '1px solid var(--border)' }}
+                               >
+                                 {CV_SCREENING_OPTIONS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                               </select>
+                             </td>
+                             {interviewRounds.map((round) => (
+                               <td key={round}>
+                                 <select
+                                   value={(c.interviewRounds || {})[round] || 'Not set'}
+                                   onChange={(e) => saveInterviewRound(c._id, round, e.target.value)}
+                                   style={{ padding: '2px 6px', fontSize: 11, borderRadius: 4, border: '1px solid var(--border)', minWidth: 120 }}
+                                 >
+                                   {INTERVIEW_OPTIONS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                                 </select>
+                                 {(c.interviewRounds || {})[round] === 'Refered for other position' && (
+                                  <select
+                                    value={referToOtherRole[c._id] || ''}
+                                    onChange={(e) => handleReferToOtherRole(c._id, e.target.value)}
+                                    style={{ padding: '2px 6px', fontSize: 11, borderRadius: 4, border: '1px solid var(--border)', minWidth: 100, marginTop: 4 }}
+                                  >
+                                    <option value="">Select role...</option>
+                                    {roleCodes.filter((code) => code !== c.roleCode).map((code) => <option key={code} value={code}>{code}</option>)}
+                                  </select>
+                                )}
+                              </td>
+                            ))}
+                            <td>
+                              {analyzerScores[c._id] ? (
+                                <span style={{ fontWeight: 600, color: analyzerScores[c._id].score >= 7 ? 'var(--green)' : analyzerScores[c._id].score >= 4 ? 'var(--amber)' : 'var(--red)' }}>
+                                  {analyzerScores[c._id].score}/10
+                                </span>
+                              ) : (
+                                <span style={{ color: 'var(--text-500)', fontSize: 12 }}>—</span>
+                              )}
+                            </td>
+                             <td><StatusBadge status={computeEffectiveStatus(c)} label={getStatusDisplay(c)} /></td>
+                             <td>
+                               <select
+                                 value={c.assessmentStatus || 'Not Set'}
+                                 onChange={(e) => saveAssessmentStatus(c._id, e.target.value)}
+                                 className={assessmentBadgeClass(c.assessmentStatus)}
+                                 style={{ border: '1px solid var(--border)', background: 'transparent', padding: '2px 6px', fontSize: 12, cursor: 'pointer', borderRadius: 4, minWidth: 140, color: '#000' }}
+                               >
+                                 {ASSESSMENT_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                               </select>
+                             </td>
+                            <td>{c.slackGroup || '—'}</td>
+                          </>
+                        )}
+                     </tr>
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+        {!loading && filtered.length === 0 && <p style={{ padding: 20, color: 'var(--text-500)' }}>No candidates match these filters.</p>}
+      </div>
+
+      {freelanceMode && (
+        <div className="filters-row" style={{ marginTop: 12, alignItems: 'center' }}>
+          <input placeholder="Add new project..." value={newProject} onChange={(e) => setNewProject(e.target.value)} style={{ width: 180 }} />
+          <button className="btn-secondary" onClick={addProject}>+ Add Project</button>
+          <span style={{ fontSize: 12, color: 'var(--text-500)' }}>Projects: {projects.join(', ')}</span>
         </div>
+      )}
 
         {profileCandidate && (
           <CandidateProfileModal

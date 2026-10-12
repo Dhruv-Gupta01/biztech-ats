@@ -1,9 +1,33 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import StatusBadge from './StatusBadge';
-import { updateCandidate } from '../api/api';
+import { updateCandidate, fetchProjects } from '../api/api';
+import { effectiveEmploymentType, typeLabel, isFreelanceRoleCode, isFreelanceCandidate } from '../utils/employment';
 
-const typeLabel = (t) => (t === 'Contract' ? 'Contractual' : t === 'Part-Time' ? 'Part Time' : t === 'Internship' ? 'Internship' : 'Full Time');
 const money = (n) => (n ? `₹${(n / 100000).toFixed(1)}L` : '—');
+
+const SCREENING_INTERVIEW_OPTIONS = ['Pass', 'Fail', 'Not Appeared', 'Rescheduled', 'Not interested', 'Referred to another position'];
+const CALENDLY_SENT_OPTIONS = ['Sent', 'Not Sent'];
+const CALENDLY_STATUS_OPTIONS = ['Booked', 'Not Booked'];
+const NDA_ICA_OPTIONS = ['Sent', 'Not Sent', 'Signed', 'Not Signed', 'Doubt', 'Not Interested'];
+const SLACK_STATUS_OPTIONS = ['Joined', 'Not Joined', 'Not Interested'];
+const BOOTCAMP_ATTEMPTS_OPTIONS = ['Attempt 1', 'Attempt 2', 'Attempt 3'];
+const BOOTCAMP_STATUS_OPTIONS = ['Pass', 'Fail', 'Full Fail', 'Not Active', 'Active'];
+const ONBOARDING_OPTIONS = ['Sent', 'Not Sent', 'Not Interested', 'Done'];
+const PROJECT_STATUS_OPTIONS = ['On Hold', 'Complete', 'Not Active', 'In Pipeline'];
+const DEFAULT_PROJECTS = ['Terminus', 'Snorkle', 'Alegion'];
+
+// Field order matches the Candidate Pool table columns for FREELANCE CODING.
+const FREELANCE_FIELDS = [
+  { key: 'screeningInterview', label: 'Screening Interview', options: SCREENING_INTERVIEW_OPTIONS },
+  { key: 'calendlyLinkSent', label: 'Calendly Link Sent', options: CALENDLY_SENT_OPTIONS },
+  { key: 'calendlyLinkStatus', label: 'Calendly Link Status', options: CALENDLY_STATUS_OPTIONS },
+  { key: 'ndaIca', label: 'NDA & ICA', options: NDA_ICA_OPTIONS },
+  { key: 'slackStatus', label: 'Slack', options: SLACK_STATUS_OPTIONS },
+  { key: 'bootcampAttempts', label: 'Bootcamp Attempts', options: BOOTCAMP_ATTEMPTS_OPTIONS },
+  { key: 'bootcampStatus', label: 'Bootcamp Status', options: BOOTCAMP_STATUS_OPTIONS },
+  { key: 'onboarding', label: 'Onboarding', options: ONBOARDING_OPTIONS },
+  { key: 'projectStatus', label: 'Project Status', options: PROJECT_STATUS_OPTIONS }
+];
 
 const NON_ANSWER_FIELDS = ['Timestamp', 'Email Address'];
 
@@ -20,6 +44,18 @@ function CandidateProfileModal({ candidate, role, onClose, onSaved }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(null);
+  const [projects, setProjects] = useState(DEFAULT_PROJECTS);
+
+  // Project list is shared with the Candidate Pool — anything added there (or
+  // here) is stored in the DB and shows up everywhere.
+  useEffect(() => {
+    fetchProjects()
+      .then((res) => {
+        const list = (res.data || []).map((p) => p.name).filter(Boolean);
+        setProjects([...new Set([...DEFAULT_PROJECTS, ...list])]);
+      })
+      .catch(() => {});
+  }, []);
 
   if (!candidate) return null;
   const c = candidate;
@@ -30,13 +66,24 @@ function CandidateProfileModal({ candidate, role, onClose, onSaved }) {
       email: c.email || '',
       phone: c.phone || '',
       location: c.location || '',
-      employmentType: c.employmentType || 'Full-Time',
+      employmentType: effectiveEmploymentType(c) || 'Full-Time',
       yearsOfExperience: c.yearsOfExperience ?? 0,
       ctcCurrent: c.ctcCurrent || 0,
       ctcExpected: c.ctcExpected || 0,
       noticePeriod: c.noticePeriod || '',
       roleCode: c.roleCode || '',
-      status: c.status || ''
+      status: c.status || '',
+      // FREELANCE CODING columns
+      screeningInterview: c.screeningInterview || '',
+      calendlyLinkSent: c.calendlyLinkSent || '',
+      calendlyLinkStatus: c.calendlyLinkStatus || '',
+      ndaIca: c.ndaIca || '',
+      slackStatus: c.slackStatus || '',
+      bootcampAttempts: c.bootcampAttempts || '',
+      bootcampStatus: c.bootcampStatus || '',
+      onboarding: c.onboarding || '',
+      project: c.project || '',
+      projectStatus: c.projectStatus || ''
     });
     setEditing(true);
   };
@@ -69,7 +116,7 @@ function CandidateProfileModal({ candidate, role, onClose, onSaved }) {
             <h2 style={{ margin: '0 0 4px', fontFamily: 'var(--font-display)', fontSize: 19 }}>{c.fullName}</h2>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <StatusBadge status={c.status} />
-              <span style={{ fontSize: 12.5, color: 'var(--text-500)' }}>{c.roleCode} · {typeLabel(c.employmentType)}</span>
+              <span style={{ fontSize: 12.5, color: 'var(--text-500)' }}>{c.roleCode} · {typeLabel(effectiveEmploymentType(c))}</span>
             </div>
           </div>
           <button className="modal-close" onClick={onClose}>✕</button>
@@ -96,6 +143,20 @@ function CandidateProfileModal({ candidate, role, onClose, onSaved }) {
                   <Field label="Notice Period">{c.noticePeriod}</Field>
                   <Field label="Slack Group">{c.slackGroup}</Field>
                 </div>
+                {isFreelanceCandidate(c) && (
+                  <div className="profile-grid" style={{ marginTop: 10 }}>
+                    <Field label="Screening Interview">{c.screeningInterview || '—'}</Field>
+                    <Field label="Calendly Link Sent">{c.calendlyLinkSent || '—'}</Field>
+                    <Field label="Calendly Link Status">{c.calendlyLinkStatus || '—'}</Field>
+                    <Field label="NDA & ICA">{c.ndaIca || '—'}</Field>
+                    <Field label="Slack Status">{c.slackStatus || '—'}</Field>
+                    <Field label="Bootcamp Attempts">{c.bootcampAttempts || '—'}</Field>
+                    <Field label="Bootcamp Status">{c.bootcampStatus || '—'}</Field>
+                    <Field label="Onboarding">{c.onboarding || '—'}</Field>
+                    <Field label="Project">{c.project || '—'}</Field>
+                    <Field label="Project Status">{c.projectStatus || '—'}</Field>
+                  </div>
+                )}
                 {c.skills?.length > 0 && (
                   <div style={{ marginTop: 10 }}>
                     {c.skills.map((s) => <span key={s} className="tag">{s}</span>)}
@@ -177,7 +238,13 @@ function CandidateProfileModal({ candidate, role, onClose, onSaved }) {
                     <option value="Contract">Contractual</option>
                     <option value="Part-Time">Part Time</option>
                     <option value="Internship">Internship</option>
+                    <option value="FREELANCE CODING">Freelance Coding</option>
                   </select>
+                  {isFreelanceRoleCode(form.roleCode) && (
+                    <p style={{ fontSize: 11, color: 'var(--text-500)', margin: '4px 0 0' }}>
+                      Role codes starting with “F” are always Freelance Coding.
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-500)' }}>Years of Experience</label>
@@ -198,10 +265,41 @@ function CandidateProfileModal({ candidate, role, onClose, onSaved }) {
                 <div>
                   <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-500)' }}>Status</label>
                   <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid var(--border)', marginTop: 4 }}>
-                     {['Information Form Response','Interview 1','Interview 1 Shortlisted','Interview 2','Interview 2 Shortlisted','Assessment 1','Assessment 1 Shortlisted','Assessment 1 Passed','Assessment 2','Assessment 2 Shortlisted','Assessment 2 Passed','Final Round Shortlisted','Selected','Rejected'].map((s) => <option key={s} value={s}>{s}</option>)}
+                     {['Information Form Response','Interview 1','Interview 1 Shortlisted','Interview 2','Interview 2 Shortlisted','Assessment 1','Assessment 1 Shortlisted','Assessment 1 Passed','Assessment 2','Assessment 2 Shortlisted','Assessment 2 Passed','Final Round Shortlisted','Selected','Rejected','Not Appeared','Rescheduled','Refered for other position','Not interested'].map((s) => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
               </div>
+
+              {isFreelanceCandidate(c) && (
+                <>
+                  <h4 style={{ margin: '22px 0 10px', fontSize: 13.5, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+                    Freelance Coding Pipeline
+                  </h4>
+                  <div className="profile-grid">
+                    {FREELANCE_FIELDS.map(({ key, label, options }) => (
+                      <div key={key}>
+                        <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-500)' }}>{label}</label>
+                        <select value={form[key] || ''} onChange={(e) => setForm({ ...form, [key]: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid var(--border)', marginTop: 4 }}>
+                          <option value="">—</option>
+                          {options.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                        </select>
+                        {key === 'calendlyLinkStatus' && (
+                          <p style={{ fontSize: 11, color: 'var(--text-500)', margin: '4px 0 0' }}>
+                            Use “↻ Check Calendly” in the Candidate Pool table to fetch this from Calendly.
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                    <div>
+                      <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-500)' }}>Project</label>
+                      <select value={form.project || ''} onChange={(e) => setForm({ ...form, project: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid var(--border)', marginTop: 4 }}>
+                        <option value="">—</option>
+                        {projects.map((p) => <option key={p} value={p}>{p}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                </>
+              )}
 
               <div style={{ marginTop: 20, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                 <button className="btn-secondary" onClick={cancel} disabled={saving}>Cancel</button>

@@ -124,6 +124,71 @@ tbody tr:hover { background: #FAFBFC; }
 .candidate-select-list { display: flex; flex-direction: column; gap: 6px; max-height: 480px; overflow-y: auto; }
 .candidate-select-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; font-size: 13px; border: 1px solid transparent; }
 .candidate-select-item.selected { background: var(--orange-100); border-color: var(--orange-500); }
+
+/* ===== Assessment & Outreach: filters =====
+   Filters live in their own full-width card above the candidate/template
+   split, laid out in columns, so the candidate list stays visible without
+   scrolling past a long stack of dropdowns. */
+.outreach-page { display: flex; flex-direction: column; gap: 18px; }
+
+.outreach-filters { padding: 16px 18px 18px; }
+.outreach-filters-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px 20px; flex-wrap: wrap; margin-bottom: 16px;
+  padding-bottom: 14px; border-bottom: 1px solid var(--border);
+}
+.outreach-filters-head h3 { margin: 0; font-family: var(--font-display); fontSize: 15px; }
+.outreach-filters-sub { display: block; font-size: 12px; color: var(--text-500); margin-top: 4px; }
+.outreach-filters-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.outreach-filters-actions .btn-secondary { padding: 7px 14px; font-size: 12.5px; }
+
+.outreach-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 18px;
+}
+@media (min-width: 1280px) { .outreach-filter-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (min-width: 1800px) { .outreach-filter-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+.outreach-filter-field { min-width: 0; }
+.outreach-filter-field > label {
+  display: block; font-size: 11px; font-weight: 700; color: var(--text-500);
+  margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.04em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.outreach-filter-field select,
+.outreach-filter-field input {
+  width: 100%; padding: 8px 10px; font-size: 13px; color: var(--text-900);
+  border: 1px solid var(--border); border-radius: 8px; background: var(--card);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.outreach-filter-field select:hover,
+.outreach-filter-field input:hover { border-color: var(--text-300); }
+.outreach-filter-field select:focus,
+.outreach-filter-field input:focus {
+  outline: none; border-color: var(--orange-500);
+  box-shadow: 0 0 0 3px var(--orange-100);
+}
+.outreach-filter-field.is-set > label { color: var(--orange-500); }
+.outreach-filter-field.is-set select,
+.outreach-filter-field input.is-set { border-color: var(--orange-500); background: #FFFCF9; }
+
+/* Badge counting active filters, sits next to the "Filters" heading. */
+.outreach-filter-count {
+  display: inline-block; min-width: 20px; padding: 1px 7px; margin-left: 8px;
+  background: var(--orange-500); color: #fff; border-radius: 20px;
+  font-size: 11px; font-weight: 700; text-align: center; vertical-align: middle;
+}
+
+/* Stack the candidate list above the template builder on narrow screens. */
+@media (max-width: 1024px) {
+  .outreach-layout { grid-template-columns: 1fr; }
+  .outreach-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .outreach-filter-grid { grid-template-columns: 1fr; }
+}
+
 .template-vars { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
 .var-chip { background: var(--bg); border: 1px dashed var(--border); padding: 4px 10px; border-radius: 6px; font-size: 11.5px; font-family: monospace; color: var(--text-500); }
 .email-preview { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 16px; font-size: 13.5px; white-space: pre-wrap; margin-top: 10px; }

@@ -8,7 +8,8 @@
     "seed:recruiter": "node seed/seedRecruiter.js",
     "seed:email-templates": "node seed/seedEmailTemplates.js",
     "seed:candidates": "node scripts/seedCandidates.js",
-    "db:reset": "node scripts/resetData.js"
+    "db:reset": "node scripts/resetData.js",
+    "migrate:freelance": "node scripts/migrateFreelance.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

@@ -15,13 +15,17 @@ const STATUS_ORDER = [
   'Assessment 2 Passed',
   'Final Round Shortlisted',
   'Selected',
-  'Rejected'
+  'Rejected',
+  'Not Appeared',
+  'Rescheduled',
+  'Refered for other position',
+  'Not interested'
 ];
 const STATUS_COLORS = {
   'Information Form Response': '#6B7280',
   'Interview 1': 'var(--blue)',
   'Interview 1 Shortlisted': 'var(--purple)',
-  'Interview 2': 'var(--amber)',
+  'Interview 2': 'var(--blue)',
   'Interview 2 Shortlisted': 'var(--purple)',
   'Assessment 1': 'var(--blue)',
   'Assessment 1 Shortlisted': 'var(--purple)',
@@ -30,8 +34,12 @@ const STATUS_COLORS = {
   'Assessment 2 Shortlisted': 'var(--purple)',
   'Assessment 2 Passed': 'var(--green)',
   'Final Round Shortlisted': 'var(--green)',
-  Selected: 'var(--green)',
-  Rejected: 'var(--red)'
+  'Selected': 'var(--green)',
+  'Rejected': 'var(--red)',
+  'Not Appeared': 'var(--red)',
+  'Rescheduled': 'var(--amber)',
+  'Refered for other position': 'var(--purple)',
+  'Not interested': 'var(--red)'
 };
 const SOURCE_PALETTE = ['var(--blue)', 'var(--purple)', 'var(--amber)', 'var(--green)', '#6B7280', 'var(--red)'];
 const STALE_DAYS_THRESHOLD = 7;

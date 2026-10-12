@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { fetchRoles, createRole, deleteRole, fetchRetentionStatus, runRetentionNow } from '../api/api';
+import { isFreelanceRoleCode } from '../utils/employment';
 
 const emptyForm = { code: '', title: '', department: '', description: '', empType: 'Full-Time', openings: 1, skills: '', minExperience: '', notNegotiable: false };
 
@@ -88,8 +89,13 @@ function RolesCodes() {
           <div><input placeholder="Department" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} /></div>
           <div>
             <select value={form.empType} onChange={(e) => setForm({ ...form, empType: e.target.value })}>
-              <option>Full-Time</option><option>Part-Time</option><option>Contract</option><option>Internship</option>
+              <option>Full-Time</option><option>Part-Time</option><option>Contract</option><option>Internship</option><option>FREELANCE CODING</option>
             </select>
+            {isFreelanceRoleCode(form.code) && (
+              <p style={{ fontSize: 11, color: 'var(--text-500)', margin: '4px 0 0' }}>
+                Codes starting with “F” are Freelance Coding.
+              </p>
+            )}
           </div>
           <div><input type="number" min="0" placeholder="Openings" value={form.openings} onChange={(e) => setForm({ ...form, openings: e.target.value })} /></div>
             <div className="full">

@@ -2,7 +2,7 @@ const { parse } = require('csv-parse/sync');
 const Candidate = require('../models/Candidate');
 const Role = require('../models/Role');
 
-const VALID_EMP_TYPES = ['Full-Time', 'Part-Time', 'Contract', 'Internship'];
+const VALID_EMP_TYPES = ['Full-Time', 'Part-Time', 'Contract', 'Internship', 'FREELANCE CODING'];
 const VALID_STATUSES = [
   'Information Form Response',
   'Interview 1',
@@ -17,7 +17,11 @@ const VALID_STATUSES = [
   'Assessment 2 Passed',
   'Final Round Shortlisted',
   'Selected',
-  'Rejected'
+  'Rejected',
+  'Not Appeared',
+  'Rescheduled',
+  'Refered for other position',
+  'Not interested'
 ];
 
 const HEADER_MAP = {
@@ -142,7 +146,9 @@ exports.bulkImportCandidates = async (req, res) => {
         continue;
       }
 
-      const employmentType = VALID_EMP_TYPES.includes(row.employmentType) ? row.employmentType : 'Full-Time';
+      const employmentType = roleCode.startsWith('F')
+        ? 'FREELANCE CODING'
+        : (VALID_EMP_TYPES.includes(row.employmentType) ? row.employmentType : 'Full-Time');
       const status = VALID_STATUSES.includes(row.status) ? row.status : 'Information Form Response';
       const skills = row.skills ? row.skills.split(';').map((s) => s.trim()).filter(Boolean) : [];
 
@@ -239,7 +245,9 @@ exports.bulkImportWithRole = async (req, res) => {
         continue;
       }
 
-      const employmentType = VALID_EMP_TYPES.includes(row.employmentType) ? row.employmentType : 'Full-Time';
+      const employmentType = roleCode.toUpperCase().trim().startsWith('F')
+        ? 'FREELANCE CODING'
+        : (VALID_EMP_TYPES.includes(row.employmentType) ? row.employmentType : 'Full-Time');
       const status = VALID_STATUSES.includes(row.status) ? row.status : 'Information Form Response';
       const skills = row.skills ? row.skills.split(';').map((s) => s.trim()).filter(Boolean) : [];
 

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { fetchCandidates, fetchRoles, updateCandidate } from '../api/api';
 import CandidateProfileModal from './CandidateProfileModal';
+import { effectiveEmploymentType, isFreelanceCandidate } from '../utils/employment';
 
 const STATUS_OPTIONS = [
   'Information Form Response',
@@ -16,10 +17,14 @@ const STATUS_OPTIONS = [
   'Assessment 2 Passed',
   'Final Round Shortlisted',
   'Selected',
-  'Rejected'
+  'Rejected',
+  'Not Appeared',
+  'Rescheduled',
+  'Refered for other position',
+  'Not interested'
 ];
 
-const EMP_TYPE_OPTIONS = ['Full-Time', 'Part-Time', 'Contract', 'Internship'];
+const EMP_TYPE_OPTIONS = ['Full-Time', 'Part-Time', 'Contract', 'Internship', 'FREELANCE CODING'];
 
 function RoleCodeData() {
   const [roles, setRoles] = useState([]);
@@ -49,7 +54,8 @@ function RoleCodeData() {
       data = data.filter((c) => c.roleCode === selectedRoleCode);
     }
     if (filters.employmentType) {
-      data = data.filter((c) => c.employmentType === filters.employmentType);
+      // F-prefixed role codes are always FREELANCE CODING.
+      data = data.filter((c) => effectiveEmploymentType(c) === filters.employmentType);
     }
     if (filters.status) {
       data = data.filter((c) => c.status === filters.status);
@@ -166,6 +172,9 @@ function RoleCodeData() {
                     <td>{c.phone || '—'}</td>
                     <td>{c.email || '—'}</td>
                     <td>
+                      {isFreelanceCandidate(c) && (
+                        <span className="badge badge-applied" style={{ marginRight: 6 }}>Freelance Coding</span>
+                      )}
                        <span className="badge badge-applied">{c.status || 'Information Form Response'}</span>
                     </td>
                     <td style={{ minWidth: 220, maxWidth: 320 }}>

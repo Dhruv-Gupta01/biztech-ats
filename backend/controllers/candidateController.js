@@ -202,7 +202,9 @@ exports.applyCandidate = async (req, res) => {
       phone: phone || parsedData.phone || '',
       location: location || parsedData.location || '',
       roleCode: (roleCode || '').toUpperCase().trim(),
-      employmentType: employmentType || parsedData.employmentType || 'Full-Time',
+      employmentType: (roleCode || '').toUpperCase().trim().startsWith('F')
+        ? 'FREELANCE CODING'
+        : (employmentType || parsedData.employmentType || 'Full-Time'),
       yearsOfExperience: Number(yearsOfExperience) || parsedData.yearsOfExperience || 0,
       ctcCurrent: Number(ctcCurrent) || parsedData.ctcCurrent || 0,
       ctcExpected: Number(ctcExpected) || parsedData.ctcExpected || 0,
@@ -226,20 +228,51 @@ exports.applyCandidate = async (req, res) => {
   }
 };
 
-// GET /api/candidates?roleCode=&status=&minExperience=&maxExperience=&source=&employmentType=
+// GET /api/candidates?roleCode=&status=&minExperience=&maxExperience=&source=&employmentType=&minSuitability=&screeningInterview=&calendlyLinkSent=&calendlyLinkStatus=&ndaIca=&slackStatus=&bootcampAttempts=&bootcampStatus=&onboarding=&project=&projectStatus=
 exports.getCandidates = async (req, res) => {
   try {
-    const { roleCode, status, minExperience, maxExperience, source, employmentType } = req.query;
+    const {
+      roleCode, status, minExperience, maxExperience, source, employmentType,
+      minSuitability, screeningInterview, calendlyLinkSent, calendlyLinkStatus,
+      ndaIca, slackStatus, bootcampAttempts, bootcampStatus, onboarding,
+      project, projectStatus
+    } = req.query;
     const filter = {};
-    if (roleCode) filter.roleCode = roleCode.toUpperCase().trim();
+
+    const normalizedRoleCode = roleCode ? roleCode.toUpperCase().trim() : '';
+    if (normalizedRoleCode) filter.roleCode = normalizedRoleCode;
+
+    // Role codes starting with "F" are FREELANCE CODING regardless of what the
+    // stored employmentType says — this keeps historical rows correct before
+    // they're backfilled by scripts/migrateFreelance.js.
+    const forceFreelance = normalizedRoleCode.startsWith('F');
+    if (forceFreelance || employmentType === 'FREELANCE CODING') {
+      filter.$or = [
+        { employmentType: 'FREELANCE CODING' },
+        { roleCode: { $regex: '^F', $options: 'i' } }
+      ];
+    } else if (employmentType) {
+      filter.employmentType = employmentType;
+    }
+
     if (status) filter.status = status;
     if (source) filter.source = source;
-    if (employmentType) filter.employmentType = employmentType;
     if (minExperience || maxExperience) {
       filter.yearsOfExperience = {};
       if (minExperience) filter.yearsOfExperience.$gte = Number(minExperience);
       if (maxExperience) filter.yearsOfExperience.$lte = Number(maxExperience);
     }
+    if (minSuitability) filter['score.suitabilityRating'] = { $gte: Number(minSuitability) };
+    if (screeningInterview) filter.screeningInterview = screeningInterview;
+    if (calendlyLinkSent) filter.calendlyLinkSent = calendlyLinkSent;
+    if (calendlyLinkStatus) filter.calendlyLinkStatus = calendlyLinkStatus;
+    if (ndaIca) filter.ndaIca = ndaIca;
+    if (slackStatus) filter.slackStatus = slackStatus;
+    if (bootcampAttempts) filter.bootcampAttempts = bootcampAttempts;
+    if (bootcampStatus) filter.bootcampStatus = bootcampStatus;
+    if (onboarding) filter.onboarding = onboarding;
+    if (project) filter.project = project;
+    if (projectStatus) filter.projectStatus = projectStatus;
     const candidates = await Candidate.find(filter).sort({ createdAt: -1 });
     return res.status(200).json({ success: true, count: candidates.length, data: candidates });
   } catch (err) {
@@ -291,11 +324,27 @@ exports.scoreCandidate = async (req, res) => {
 // Generic field update (role reassignment, general remarks, manual status change,
 // Slack channel tag, etc.) — separate from scoreCandidate since not every edit
 // involves re-scoring. Every changed tracked field is logged to candidate.history.
+//
+// The FREELANCE CODING columns are enum-restricted but optional, and the UI
+// represents "not chosen" with an empty option value. Empty strings are
+// normalised to null before assignment so validation passes and the UI shows
+// the "—" placeholder again.
+const FREELANCE_NULLABLE_FIELDS = [
+  'screeningInterview', 'calendlyLinkSent', 'calendlyLinkStatus', 'ndaIca',
+  'slackStatus', 'bootcampAttempts', 'bootcampStatus', 'onboarding',
+  'project', 'projectStatus'
+];
+
 exports.updateCandidate = async (req, res) => {
   try {
     const { changedBy, ...changes } = req.body;
     const candidate = await Candidate.findById(req.params.id);
     if (!candidate) return res.status(404).json({ success: false, message: 'Candidate not found.' });
+
+    // An F-prefixed role code is always FREELANCE CODING.
+    if (changes.roleCode && changes.roleCode.toUpperCase().trim().startsWith('F')) {
+      changes.employmentType = 'FREELANCE CODING';
+    }
 
     const newHistoryEntries = buildHistoryEntries(candidate, changes, changedBy);
     for (const [key, value] of Object.entries(changes)) {
@@ -304,6 +353,11 @@ exports.updateCandidate = async (req, res) => {
       }
       if (key === 'cvScreening' && value === '') {
         changes[key] = 'Not Set';
+      }
+      if (FREELANCE_NULLABLE_FIELDS.includes(key)) {
+        // '' means "clear it back to unset" from the dropdown's "—" option.
+        candidate[key] = value ? value : null;
+        continue;
       }
       if (value && typeof value === 'object' && !Array.isArray(value)) {
         const existing = candidate[key];
@@ -322,6 +376,11 @@ exports.updateCandidate = async (req, res) => {
 
     return res.status(200).json({ success: true, message: 'Candidate updated.', data: candidate });
   } catch (err) {
+    if (err.name === 'ValidationError') {
+      const reasons = Object.values(err.errors || {}).map((e) => `${e.path}: ${e.message}`).join(' | ');
+      console.error('Candidate update validation failed:', reasons);
+      return res.status(400).json({ success: false, message: `Invalid value — ${reasons}` });
+    }
     console.error(err);
     return res.status(500).json({ success: false, message: 'Server error while updating candidate.' });
   }
@@ -337,6 +396,39 @@ exports.deleteCandidate = async (req, res) => {
   } catch (err) {
     console.error(err);
     return res.status(500).json({ success: false, message: 'Server error while deleting candidate.' });
+  }
+};
+
+// POST /api/candidates/:id/calendly-status
+// Best-effort Calendly check for FREELANCE CODING candidates. Always resolves;
+// when Calendly isn't configured (or the API fails) it reports that instead of
+// erroring so the recruiter can keep using the manual dropdown.
+exports.checkCalendlyStatus = async (req, res) => {
+  try {
+    const candidate = await Candidate.findById(req.params.id);
+    if (!candidate) return res.status(404).json({ success: false, message: 'Candidate not found.' });
+
+    const { checkCalendlyStatus } = require('../services/calendlyService');
+    const result = await checkCalendlyStatus(candidate.email);
+
+    if (result.available && result.status && result.status !== candidate.calendlyLinkStatus) {
+      candidate.calendlyLinkStatus = result.status;
+      candidate.updatedAt = new Date();
+      await candidate.save();
+      return res.status(200).json({ success: true, message: `Calendly status updated to ${result.status}.`, data: candidate });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: result.available
+        ? `Calendly status is already ${result.status}.`
+        : result.reason,
+      data: candidate,
+      calendly: result
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Server error while checking Calendly status.' });
   }
 };
 
@@ -478,7 +570,9 @@ exports.bulkUploadResumes = async (req, res) => {
           phone: phone || '',
           location: parsedData.location || '',
           roleCode: roleCode.toUpperCase().trim(),
-          employmentType: parsedData.employmentType || 'Full-Time',
+          employmentType: roleCode.toUpperCase().trim().startsWith('F')
+            ? 'FREELANCE CODING'
+            : (parsedData.employmentType || 'Full-Time'),
           yearsOfExperience: parsedData.yearsOfExperience || 0,
           ctcCurrent: parsedData.ctcCurrent || 0,
           ctcExpected: parsedData.ctcExpected || 0,

@@ -62,13 +62,17 @@ export async function scoreCandidate(id, payload) {
 export async function analyzeCandidate(id) {
   return request(`${BASE_URL}/candidates/${id}/analyze`, { method: 'POST' });
 }
-
 export async function analyzeCandidatesBulk(candidateIds = []) {
   return request(`${BASE_URL}/candidates/analyze-bulk`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ candidateIds })
   });
+}
+
+// POST /api/candidates/:id/calendly-status — best-effort Calendly lookup
+export async function checkCalendlyStatus(id) {
+  return request(`${BASE_URL}/candidates/${id}/calendly-status`, { method: 'POST' });
 }
 
 export async function recordInterviewStage(id, payload) 
@@ -284,4 +288,21 @@ export async function deleteEmailTemplate(id) {
 
 export async function fetchEmailTemplate(id) {
   return request(`${BASE_URL}/email-templates/${id}`);
+}
+
+// --- Projects (Freelance Coding) ---
+export async function fetchProjects() {
+  return request(`${BASE_URL}/projects`);
+}
+
+export async function createProject(project) {
+  return request(`${BASE_URL}/projects`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(project)
+  });
+}
+
+export async function deleteProject(id) {
+  return request(`${BASE_URL}/projects/${id}`, { method: 'DELETE' });
 }

@@ -16,7 +16,7 @@ const ImportReview = require('../models/ImportReview');
 const EtlRun = require('../models/EtlRun');
 const drive = require('./googleDriveService');
 
-const VALID_EMP_TYPES = ['Full-Time', 'Part-Time', 'Contract', 'Internship'];
+const VALID_EMP_TYPES = ['Full-Time', 'Part-Time', 'Contract', 'Internship', 'FREELANCE CODING'];
 const VALID_STATUSES = [
   'Information Form Response',
   'Interview 1',
@@ -31,7 +31,11 @@ const VALID_STATUSES = [
   'Assessment 2 Passed',
   'Final Round Shortlisted',
   'Selected',
-  'Rejected'
+  'Rejected',
+  'Not Appeared',
+  'Rescheduled',
+  'Refered for other position',
+  'Not interested'
 ];
 const EMAIL_RE = /^[\w.+-]+@[\w-]+\.[\w.-]+$/;
 
@@ -191,7 +195,9 @@ function validateRow(row, knownRoleCodes) {
 
   if (reasons.length > 0) return { ok: false, reasons };
 
-  const employmentType = VALID_EMP_TYPES.includes(row.employmentType) ? row.employmentType : 'Full-Time';
+  const employmentType = roleCode.startsWith('F')
+    ? 'FREELANCE CODING'
+    : (VALID_EMP_TYPES.includes(row.employmentType) ? row.employmentType : 'Full-Time');
       const status = VALID_STATUSES.includes(row.status) ? row.status : 'Information Form Response';
   const skills = row.skills ? row.skills.split(';').map((s) => s.trim()).filter(Boolean) : [];
 

@@ -8,7 +8,7 @@ const candidateSchema = new mongoose.Schema({
   roleCode: { type: String, required: true, uppercase: true, trim: true },
   employmentType: {
     type: String,
-    enum: ['Full-Time', 'Part-Time', 'Contract', 'Internship'],
+    enum: ['Full-Time', 'Part-Time', 'Contract', 'Internship', 'FREELANCE CODING'],
     default: 'Full-Time'
   },
   yearsOfExperience: { type: Number, required: true, min: 0 },
@@ -22,6 +22,23 @@ const candidateSchema = new mongoose.Schema({
   resumeUrl: { type: String, default: '' },
   resumeData: { type: Buffer, default: null },
   resumeText: { type: String, default: '' },
+  
+  // FREELANCE CODING specific fields.
+  // No `default` here on purpose: an empty string is not a valid enum value, so
+  // defaulting to '' made every save of an existing document fail validation.
+  // Unset means "not yet chosen" — Mongoose skips enum validation for
+  // undefined/null on these optional paths, and the UI stores null for "—".
+  screeningInterview: { type: String, enum: ['Pass', 'Fail', 'Not Appeared', 'Rescheduled', 'Not interested', 'Referred to another position'], default: null },
+  calendlyLinkSent: { type: String, enum: ['Sent', 'Not Sent'], default: null },
+  calendlyLinkStatus: { type: String, enum: ['Booked', 'Not Booked'], default: null },
+  ndaIca: { type: String, enum: ['Sent', 'Not Sent', 'Signed', 'Not Signed', 'Doubt', 'Not Interested'], default: null },
+  slackStatus: { type: String, enum: ['Joined', 'Not Joined', 'Not Interested'], default: null },
+  bootcampAttempts: { type: String, enum: ['Attempt 1', 'Attempt 2', 'Attempt 3'], default: null },
+  bootcampStatus: { type: String, enum: ['Pass', 'Fail', 'Full Fail', 'Not Active', 'Active'], default: null },
+  onboarding: { type: String, enum: ['Sent', 'Not Sent', 'Not Interested', 'Done'], default: null },
+  project: { type: String, default: null },
+  projectStatus: { type: String, enum: ['On Hold', 'Complete', 'Not Active', 'In Pipeline'], default: null },
+
   status: {
     type: String,
     enum: [
@@ -39,7 +56,11 @@ const candidateSchema = new mongoose.Schema({
       'Assessment 2 Passed',
       'Final Round Shortlisted',
       'Selected',
-      'Rejected'
+      'Rejected',
+      'Not Appeared',
+      'Rescheduled',
+      'Refered for other position',
+      'Not interested'
     ],
     default: 'Information Form Response'
   },
@@ -104,5 +125,24 @@ const candidateSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });
+
+// Role codes starting with "F" are always FREELANCE CODING candidates. This
+// keeps employmentType in sync whether the candidate arrives via resume upload,
+// CSV import, the apply form, or a manual recruiter edit.
+candidateSchema.pre('save', function applyFreelanceRoleCode(next) {
+  if (this.roleCode && this.roleCode.toUpperCase().trim().startsWith('F')) {
+    this.employmentType = 'FREELANCE CODING';
+  }
+  next();
+});
+
+// Same rule for updateCandidate's direct .save() path and any findOneAndUpdate
+// usage elsewhere in the app.
+function enforceFreelanceForRoleCode(doc) {
+  if (doc && doc.roleCode && doc.roleCode.toUpperCase().trim().startsWith('F')) {
+    doc.employmentType = 'FREELANCE CODING';
+  }
+}
+candidateSchema.post('init', enforceFreelanceForRoleCode);
 
 module.exports = mongoose.model('Candidate', candidateSchema);

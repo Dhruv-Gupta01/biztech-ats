@@ -21,7 +21,7 @@
 const NAUKRI_API_URL = process.env.NAUKRI_API_URL || 'https://api.naukri.com/rms/jobs'; // placeholder — confirm with Naukri partner docs
 
 function mapEmploymentType(type) {
-  const map = { 'Full-Time': 'Full Time', 'Part-Time': 'Part Time', 'Contract': 'Contractual', 'Internship': 'Internship' };
+  const map = { 'Full-Time': 'Full Time', 'Part-Time': 'Part Time', 'Contract': 'Contractual', 'Internship': 'Internship', 'FREELANCE CODING': 'Freelance' };
   return map[type] || 'Full Time';
 }
 

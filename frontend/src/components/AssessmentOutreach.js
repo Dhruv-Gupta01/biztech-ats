@@ -1,7 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { emailTemplates } from '../data/dummyData';
-import { fetchCandidates, fetchRoles, sendOutreachEmail, fetchEmailTemplates } from '../api/api';
+import { fetchCandidates, fetchRoles, sendOutreachEmail, fetchEmailTemplates, fetchProjects } from '../api/api';
 import TemplateManager from './TemplateManager';
+import {
+  isFreelanceRoleCode, isFreelanceFilter, isFreelanceCandidate, effectiveEmploymentType, typeLabel
+} from '../utils/employment';
 
 function fillTemplate(str, vars) {
   return str.replace(/{{(.*?)}}/g, (_, key) => vars[key.trim()] ?? `{{${key.trim()}}}`);
@@ -33,8 +36,31 @@ const STATUS_OPTIONS = [
   'Assessment 2 Passed',
   'Final Round Shortlisted',
   'Selected',
-  'Rejected'
+  'Rejected',
+  'Not Appeared',
+  'Rescheduled',
+  'Refered for other position',
+  'Not interested'
 ];
+
+const SCREENING_INTERVIEW_OPTIONS = ['Pass', 'Fail', 'Not Appeared', 'Rescheduled', 'Not interested', 'Referred to another position'];
+const CALENDLY_SENT_OPTIONS = ['Sent', 'Not Sent'];
+const CALENDLY_STATUS_OPTIONS = ['Booked', 'Not Booked'];
+const NDA_ICA_OPTIONS = ['Sent', 'Not Sent', 'Signed', 'Not Signed', 'Doubt', 'Not Interested'];
+const SLACK_STATUS_OPTIONS = ['Joined', 'Not Joined', 'Not Interested'];
+const BOOTCAMP_ATTEMPTS_OPTIONS = ['Attempt 1', 'Attempt 2', 'Attempt 3'];
+const BOOTCAMP_STATUS_OPTIONS = ['Pass', 'Fail', 'Full Fail', 'Not Active', 'Active'];
+const ONBOARDING_OPTIONS = ['Sent', 'Not Sent', 'Not Interested', 'Done'];
+const PROJECT_STATUS_OPTIONS = ['On Hold', 'Complete', 'Not Active', 'In Pipeline'];
+
+// One entry per FREELANCE CODING filter, in display order. `key` matches the
+// field on freelanceFilters so the UI, the filter logic and the reset all stay
+// in sync without repeating the list three times.
+const EMPTY_FREELANCE_FILTERS = {
+  roleCode: '', analyzerMinScore: '', screeningInterview: '', calendlyLinkSent: '',
+  calendlyLinkStatus: '', ndaIca: '', slackStatus: '', bootcampAttempts: '',
+  bootcampStatus: '', onboarding: '', project: '', projectStatus: ''
+};
 
 function AssessmentOutreach() {
   const [candidates, setCandidates] = useState([]);
@@ -44,10 +70,15 @@ function AssessmentOutreach() {
   const [selectedIds, setSelectedIds] = useState([]);
   const [roleFilter, setRoleFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [empTypeFilter, setEmpTypeFilter] = useState('');
+  const [projects, setProjects] = useState(['Terminus', 'Snorkle', 'Alegion']);
+  const [freelanceFilters, setFreelanceFilters] = useState(EMPTY_FREELANCE_FILTERS);
   const [templateId, setTemplateId] = useState(emailTemplates[0].id);
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState(null);
   const [showTemplateManager, setShowTemplateManager] = useState(false);
+
+  const freelanceMode = isFreelanceFilter(empTypeFilter, roleFilter);
 
   useEffect(() => {
     Promise.all([fetchCandidates(), fetchRoles()])
@@ -59,6 +90,13 @@ function AssessmentOutreach() {
       })
       .catch((err) => { console.error('[AssessmentOutreach] load failed:', err); setLoadError(`Could not load candidates: ${err.message}`); })
       .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    fetchProjects().then((res) => {
+      const list = (res.data || []).map((p) => p.name).filter(Boolean);
+      setProjects([...new Set(['Terminus', 'Snorkle', 'Alegion', ...list])]);
+    }).catch(() => {});
   }, []);
 
   // Fetch templates from API
@@ -98,6 +136,76 @@ function AssessmentOutreach() {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
+  const filteredCandidates = useMemo(() => {
+    if (freelanceMode) {
+      const f = freelanceFilters;
+      // An F-prefixed role code is FREELANCE CODING regardless of stored employmentType.
+      let data = candidates.filter(isFreelanceCandidate);
+      if (f.roleCode) data = data.filter((c) => c.roleCode === f.roleCode);
+      if (f.analyzerMinScore) data = data.filter((c) => Number(c.score?.suitabilityRating) >= Number(f.analyzerMinScore));
+      if (f.screeningInterview) data = data.filter((c) => c.screeningInterview === f.screeningInterview);
+      if (f.calendlyLinkSent) data = data.filter((c) => c.calendlyLinkSent === f.calendlyLinkSent);
+      if (f.calendlyLinkStatus) data = data.filter((c) => c.calendlyLinkStatus === f.calendlyLinkStatus);
+      if (f.ndaIca) data = data.filter((c) => c.ndaIca === f.ndaIca);
+      if (f.slackStatus) data = data.filter((c) => c.slackStatus === f.slackStatus);
+      if (f.bootcampAttempts) data = data.filter((c) => c.bootcampAttempts === f.bootcampAttempts);
+      if (f.bootcampStatus) data = data.filter((c) => c.bootcampStatus === f.bootcampStatus);
+      if (f.onboarding) data = data.filter((c) => c.onboarding === f.onboarding);
+      if (f.project) data = data.filter((c) => c.project === f.project);
+      if (f.projectStatus) data = data.filter((c) => c.projectStatus === f.projectStatus);
+      return data;
+    }
+    return candidates.filter((c) =>
+      (!empTypeFilter || effectiveEmploymentType(c) === empTypeFilter) &&
+      (!roleFilter || c.roleCode === roleFilter) &&
+      (!statusFilter || c.status === statusFilter));
+  }, [candidates, freelanceMode, empTypeFilter, roleFilter, statusFilter, freelanceFilters]);
+
+  const selectAllFiltered = () => setSelectedIds(filteredCandidates.map((c) => c._id));
+
+  // Picking an F-prefixed role code anywhere switches the whole page into the
+  // FREELANCE CODING view so the candidate is always handled with freelance filters.
+  const handleRoleFilterChange = (value) => {
+    setRoleFilter(value);
+    if (isFreelanceRoleCode(value)) {
+      setEmpTypeFilter('FREELANCE CODING');
+      setFreelanceFilters((prev) => ({ ...prev, roleCode: value }));
+    }
+  };
+
+  const handleEmpTypeFilterChange = (value) => {
+    setEmpTypeFilter(value);
+    if (value !== 'FREELANCE CODING') {
+      setRoleFilter('');
+      setFreelanceFilters((prev) => ({ ...prev, roleCode: '' }));
+    }
+  };
+
+  const clearFilters = () => {
+    setEmpTypeFilter('');
+    setRoleFilter('');
+    setStatusFilter('');
+    setFreelanceFilters(EMPTY_FREELANCE_FILTERS);
+  };
+
+  const activeFilterCount = freelanceMode
+    ? Object.values(freelanceFilters).filter(Boolean).length
+    : [empTypeFilter, roleFilter, statusFilter].filter(Boolean).length;
+
+  const roleOptionLabel = (r) => `${r.code} — ${r.title}${isFreelanceRoleCode(r.code) ? ' · Freelance Coding' : ''}`;
+
+  const freelanceOptionSets = [
+    { key: 'screeningInterview', label: 'Screening Interview Status', options: SCREENING_INTERVIEW_OPTIONS },
+    { key: 'calendlyLinkSent', label: 'Calendly Link Sent', options: CALENDLY_SENT_OPTIONS },
+    { key: 'calendlyLinkStatus', label: 'Calendly Link Status', options: CALENDLY_STATUS_OPTIONS },
+    { key: 'ndaIca', label: 'NDA & ICA', options: NDA_ICA_OPTIONS },
+    { key: 'slackStatus', label: 'Slack', options: SLACK_STATUS_OPTIONS },
+    { key: 'bootcampAttempts', label: 'Bootcamp', options: BOOTCAMP_ATTEMPTS_OPTIONS },
+    { key: 'bootcampStatus', label: 'Bootcamp Status', options: BOOTCAMP_STATUS_OPTIONS },
+    { key: 'onboarding', label: 'Onboarding', options: ONBOARDING_OPTIONS },
+    { key: 'projectStatus', label: 'Project Status', options: PROJECT_STATUS_OPTIONS }
+  ];
+
   const handleSend = async () => {
     if (selectedIds.length === 0 || !template) return;
     setSending(true);
@@ -136,100 +244,171 @@ function AssessmentOutreach() {
       ) : candidates.length === 0 ? (
         <p style={{ color: 'var(--text-500)' }}>No candidates in the pool yet — outreach needs at least one candidate to select.</p>
       ) : (
-        <div className="outreach-layout">
-          <div className="card">
-            <h3 style={{ marginTop: 0, fontSize: 14 }}>Select Candidates ({selectedIds.length})</h3>
-            <div style={{ marginBottom: 10 }}>
-              <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-500)' }}>Filter by Role Code</label>
-              <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid var(--border)', marginTop: 4 }}>
-                <option value="">All role codes</option>
-                {roles.map((r) => <option key={r.code} value={r.code}>{r.code} — {r.title}</option>)}
-              </select>
+        <div className="outreach-page">
+          <div className="card outreach-filters">
+            <div className="outreach-filters-head">
+              <div>
+                <h3 style={{ fontSize: 15 }}>
+                  Filters
+                  {activeFilterCount > 0 && <span className="outreach-filter-count">{activeFilterCount}</span>}
+                </h3>
+                <span className="outreach-filters-sub">
+                  Showing {filteredCandidates.length} of {candidates.length} candidate{candidates.length !== 1 ? 's' : ''}
+                </span>
+              </div>
+              <div className="outreach-filters-actions">
+                <button className="btn-secondary" onClick={selectAllFiltered} disabled={filteredCandidates.length === 0}>
+                  Select All Filtered
+                </button>
+                <button className="btn-secondary" onClick={() => setSelectedIds([])} disabled={selectedIds.length === 0}>
+                  Clear Selection
+                </button>
+                <button className="btn-secondary" onClick={clearFilters} disabled={activeFilterCount === 0}>
+                  Reset Filters
+                </button>
+              </div>
             </div>
-            <div style={{ marginBottom: 10 }}>
-              <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-500)' }}>Filter by Status</label>
-              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid var(--border)', marginTop: 4 }}>
-                <option value="">All statuses</option>
-                {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-              <button className="btn-secondary" onClick={() => {
-                const filtered = candidates.filter((c) => (!roleFilter || c.roleCode === roleFilter) && (!statusFilter || c.status === statusFilter));
-                setSelectedIds(filtered.map((c) => c._id));
-              }}>
-                Select All Filtered
-              </button>
-              <button className="btn-secondary" onClick={() => setSelectedIds([])}>
-                Clear Selection
-              </button>
-            </div>
-            <div className="candidate-select-list">
-              {candidates.filter((c) => {
-                const roleMatch = !roleFilter || c.roleCode === roleFilter;
-                const statusMatch = !statusFilter || c.status === statusFilter;
-                return roleMatch && statusMatch;
-              }).map((c) => (
-                <label key={c._id} className={'candidate-select-item' + (selectedIds.includes(c._id) ? ' selected' : '')}>
-                  <input type="checkbox" checked={selectedIds.includes(c._id)} onChange={() => toggleCandidate(c._id)} />
-                  <div>
-                    <strong>{c.fullName}</strong>
-                    <div style={{ fontSize: 11.5, color: 'var(--text-500)' }}>{c.roleCode} · {c.status}</div>
+
+            <div className="outreach-filter-grid">
+              <div className={`outreach-filter-field${empTypeFilter ? ' is-set' : ''}`}>
+                <label>Employment Type</label>
+                <select value={empTypeFilter} onChange={(e) => handleEmpTypeFilterChange(e.target.value)}>
+                  <option value="">All employment types</option>
+                  <option value="Full-Time">Full Time</option>
+                  <option value="Contract">Contractual</option>
+                  <option value="Part-Time">Part Time</option>
+                  <option value="Internship">Internship</option>
+                  <option value="FREELANCE CODING">Freelance Coding</option>
+                </select>
+              </div>
+
+              {!freelanceMode && (
+                <>
+                  <div className={`outreach-filter-field${roleFilter ? ' is-set' : ''}`}>
+                    <label>Role Code</label>
+                    <select value={roleFilter} onChange={(e) => handleRoleFilterChange(e.target.value)}>
+                      <option value="">All role codes</option>
+                      {roles.map((r) => <option key={r.code} value={r.code}>{roleOptionLabel(r)}</option>)}
+                    </select>
                   </div>
-                </label>
-              ))}
+                  <div className={`outreach-filter-field${statusFilter ? ' is-set' : ''}`}>
+                    <label>Status</label>
+                    <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                      <option value="">All statuses</option>
+                      {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                </>
+              )}
+
+              {freelanceMode && (
+                <>
+                  <div className={`outreach-filter-field${freelanceFilters.roleCode ? ' is-set' : ''}`}>
+                    <label>Role Code</label>
+                    <select value={freelanceFilters.roleCode} onChange={(e) => setFreelanceFilters({ ...freelanceFilters, roleCode: e.target.value })}>
+                      <option value="">All role codes</option>
+                      {roles.map((r) => <option key={r.code} value={r.code}>{roleOptionLabel(r)}</option>)}
+                    </select>
+                  </div>
+                  <div className="outreach-filter-field">
+                    <label>Resume Analyzer Status (score ≥)</label>
+                    <input
+                      type="number" min="0" max="10"
+                      className={freelanceFilters.analyzerMinScore ? 'is-set' : ''}
+                      placeholder="e.g. 7"
+                      value={freelanceFilters.analyzerMinScore}
+                      onChange={(e) => setFreelanceFilters({ ...freelanceFilters, analyzerMinScore: e.target.value })}
+                    />
+                  </div>
+                  {freelanceOptionSets.map(({ key, label, options }) => (
+                    <div key={key} className={`outreach-filter-field${freelanceFilters[key] ? ' is-set' : ''}`}>
+                      <label>{label}</label>
+                      <select value={freelanceFilters[key]} onChange={(e) => setFreelanceFilters({ ...freelanceFilters, [key]: e.target.value })}>
+                        <option value="">All</option>
+                        {options.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                      </select>
+                    </div>
+                  ))}
+                  <div className={`outreach-filter-field${freelanceFilters.project ? ' is-set' : ''}`}>
+                    <label>Project</label>
+                    <select value={freelanceFilters.project} onChange={(e) => setFreelanceFilters({ ...freelanceFilters, project: e.target.value })}>
+                      <option value="">All</option>
+                      {projects.map((p) => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
-          <div className="card">
-            <h3 style={{ marginTop: 0, fontSize: 14 }}>Email Template Builder</h3>
-            <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-500)' }}>Template</label>
-            <select value={templateId} onChange={(e) => setTemplateId(e.target.value)} style={{ width: '100%', padding: 10, borderRadius: 8, border: '1px solid var(--border)', margin: '6px 0 14px' }}>
-              {templates.map((t) => <option key={t._id || t.id} value={t._id || t.id}>{t.name}</option>)}
-            </select>
-
-            <div className="template-vars">
-              <span className="var-chip">{'{{candidateName}}'}</span>
-              <span className="var-chip">{'{{roleTitle}}'}</span>
+          <div className="outreach-layout">
+            <div className="card">
+              <h3 style={{ marginTop: 0, fontSize: 14 }}>Select Candidates ({selectedIds.length})</h3>
+              <div className="candidate-select-list">
+                {filteredCandidates.map((c) => (
+                  <label key={c._id} className={'candidate-select-item' + (selectedIds.includes(c._id) ? ' selected' : '')}>
+                    <input type="checkbox" checked={selectedIds.includes(c._id)} onChange={() => toggleCandidate(c._id)} />
+                    <div>
+                      <strong>{c.fullName}</strong>
+                      <div style={{ fontSize: 11.5, color: 'var(--text-500)' }}>
+                        {c.roleCode} · {freelanceMode ? `Analyzer ${c.score?.suitabilityRating ?? '—'}` : typeLabel(effectiveEmploymentType(c))} · {c.status}
+                      </div>
+                    </div>
+                  </label>
+                ))}
+              </div>
             </div>
 
-            {primaryCandidate && (
-              <>
-                <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-500)', marginTop: 10 }}>
-                  Preview — {selectedIds.length} recipient{selectedIds.length !== 1 ? 's' : ''} (showing first: {primaryCandidate.fullName})
-                </div>
-                <div className="email-preview">
-                  <strong>Subject:</strong> {previewSubject}
-                  {'\n\n'}
-                  {previewBody}
-                  {template && template.attachments && template.attachments.length > 0 && (
-                    <>
-                      {'\n\n'}
-                      <strong>Attachments:</strong>
-                      <ul style={{ margin: '4px 0 0 18px', padding: 0 }}>
-                        {template.attachments.map((a, i) => (
-                          <li key={i}><a href={a.url} target="_blank" rel="noopener noreferrer">{a.name || a.url}</a></li>
-                        ))}
-                      </ul>
-                    </>
-                  )}
-                </div>
-              </>
+            <div className="card">
+              <h3 style={{ marginTop: 0, fontSize: 14 }}>Email Template Builder</h3>
+              <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-500)' }}>Template</label>
+              <select value={templateId} onChange={(e) => setTemplateId(e.target.value)} style={{ width: '100%', padding: 10, borderRadius: 8, border: '1px solid var(--border)', margin: '6px 0 14px' }}>
+                {templates.map((t) => <option key={t._id || t.id} value={t._id || t.id}>{t.name}</option>)}
+              </select>
+
+              <div className="template-vars">
+                <span className="var-chip">{'{{candidateName}}'}</span>
+                <span className="var-chip">{'{{roleTitle}}'}</span>
+              </div>
+
+              {primaryCandidate && (
+                <>
+                  <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-500)', marginTop: 10 }}>
+                    Preview — {selectedIds.length} recipient{selectedIds.length !== 1 ? 's' : ''} (showing first: {primaryCandidate.fullName})
+                  </div>
+                  <div className="email-preview">
+                    <strong>Subject:</strong> {previewSubject}
+                    {'\n\n'}
+                    {previewBody}
+                    {template && template.attachments && template.attachments.length > 0 && (
+                      <>
+                        {'\n\n'}
+                        <strong>Attachments:</strong>
+                        <ul style={{ margin: '4px 0 0 18px', padding: 0 }}>
+                          {template.attachments.map((a, i) => (
+                            <li key={i}><a href={a.url} target="_blank" rel="noopener noreferrer">{a.name || a.url}</a></li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
+
+              <div className="actions-row section-gap">
+                <button className="btn-primary" onClick={handleSend} disabled={sending || selectedIds.length === 0}>
+                  {sending ? 'Sending...' : `Send to ${selectedIds.length} Candidate${selectedIds.length !== 1 ? 's' : ''}`}
+                </button>
+                <button className="btn-secondary" onClick={() => setShowTemplateManager(!showTemplateManager)}>
+                  {showTemplateManager ? 'Hide Manager' : 'Manage Templates'}
+                </button>
+              </div>
+            </div>
+
+            {showTemplateManager && (
+              <TemplateManager onClose={() => setShowTemplateManager(false)} templates={templates} setTemplates={setTemplates} onTemplateSelect={(id) => setTemplateId(id)} />
             )}
-
-            <div className="actions-row section-gap">
-              <button className="btn-primary" onClick={handleSend} disabled={sending || selectedIds.length === 0}>
-                {sending ? 'Sending...' : `Send to ${selectedIds.length} Candidate${selectedIds.length !== 1 ? 's' : ''}`}
-              </button>
-              <button className="btn-secondary" onClick={() => setShowTemplateManager(!showTemplateManager)}>
-                {showTemplateManager ? 'Hide Manager' : 'Manage Templates'}
-              </button>
-            </div>
           </div>
-
-          {showTemplateManager && (
-            <TemplateManager onClose={() => setShowTemplateManager(false)} templates={templates} setTemplates={setTemplates} onTemplateSelect={(id) => setTemplateId(id)} />
-          )}
         </div>
       )}
     </>

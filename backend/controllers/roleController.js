@@ -31,12 +31,16 @@ exports.createRole = async (req, res) => {
 
     const skillsArray = Array.isArray(skills) ? skills : skills ? String(skills).split(',').map((s) => s.trim()).filter(Boolean) : [];
 
+    // Role codes starting with "F" are always freelance coding roles.
+    const normalizedCode = code.toUpperCase().trim();
+    const resolvedEmpType = normalizedCode.startsWith('F') ? 'FREELANCE CODING' : empType;
+
     const role = await Role.create({
-      code: code.toUpperCase().trim(),
+      code: normalizedCode,
       title,
       department,
       description: description || '',
-      empType,
+      empType: resolvedEmpType,
       openings: Number(openings) || 1,
       skills: skillsArray,
       minExperience: Number(minExperience) || 0,
@@ -78,6 +82,11 @@ exports.updateRole = async (req, res) => {
     if (updates.minExperience !== undefined) updates.minExperience = Number(updates.minExperience);
     if (updates.openings !== undefined) updates.openings = Number(updates.openings);
     if (updates.notNegotiable !== undefined) updates.notNegotiable = Boolean(updates.notNegotiable);
+
+    // Role codes starting with "F" are always freelance coding roles.
+    if (req.params.code.toUpperCase().trim().startsWith('F')) {
+      updates.empType = 'FREELANCE CODING';
+    }
 
     const role = await Role.findOneAndUpdate(
       { code: req.params.code.toUpperCase() },
