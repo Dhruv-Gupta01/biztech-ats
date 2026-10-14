@@ -2,8 +2,11 @@
 //
 // Goal: when a recruiter views a candidate's "Calendly Link Status" we want to
 // know whether they actually booked a slot. Calendly's public REST API (v2)
-// answers this: we list scheduled events and check whether any event's invitee
-// email matches the candidate. If yes → "Booked", otherwise "Not Booked".
+// answers this: we query scheduled events filtered by `invitee_email` — the
+// person who booked. Any non-cancelled event → "Booked", else "Not Booked".
+//
+// Do NOT match on `event_memberships[].user_email`: that is the HOST's email
+// (the Calendly account owning the event), not the candidate's.
 //
 // This is intentionally OPT-IN. It needs a personal access token from Calendly
 // (https://calendly.com/integrations/api_webhooks). When it isn't configured the
@@ -79,9 +82,14 @@ async function resolveScope() {
   return scopeCache;
 }
 
-// Lists scheduled events, following pagination so large pipelines aren't cut off
-// at the first 100 rows.
-async function listScheduledEvents() {
+// Lists scheduled events for one invitee email, following pagination so large
+// pipelines aren't cut off at the first 100 rows.
+//
+// We filter server-side with `invitee_email` — that is the person who booked,
+// i.e. the candidate. NOTE: `event_memberships[].user_email` is the *host's*
+// email (the Calendly account that owns the event), so it is never a reliable
+// way to identify a candidate and must not be used for matching.
+async function listScheduledEvents(inviteeEmail) {
   const { scopeParam } = await resolveScope();
   const events = [];
   let pageToken = null;
@@ -89,8 +97,9 @@ async function listScheduledEvents() {
   for (let page = 0; page < MAX_PAGES; page++) {
     const params = new URLSearchParams({
       count: '100',
-      sort: 'created_at:desc'
+      sort: 'start_time:desc' // /scheduled_events only accepts start_time
     });
+    if (inviteeEmail) params.append('invitee_email', inviteeEmail);
     // scopeParam is pre-encoded as `key=value` pairs.
     scopeParam.split('&').forEach((pair) => {
       const [k, v] = pair.split('=');
@@ -120,11 +129,13 @@ async function checkCalendlyStatus(email) {
 
   try {
     const scope = await resolveScope();
-    const events = await listScheduledEvents();
-
     const candidateEmail = email.toLowerCase().trim();
+    // Calendly matches invitee_email case-insensitively server-side.
+    const events = await listScheduledEvents(candidateEmail);
+
+    // Only count events that are actually on. A cancellation keeps the invitee
+    // record but flips status to "canceled", which must read as Not Booked.
     const booked = events.some((event) =>
-      (event.event_memberships || []).some((m) => (m.user_email || '').toLowerCase().trim() === candidateEmail) &&
       EVENT_STATUSES.includes((event.status || '').toLowerCase())
     );
 
