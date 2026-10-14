@@ -743,9 +743,9 @@ function CandidatePool() {
                   <>
                     <th>Candidate</th><th>Role Code</th><th>Location</th>
                     <th>Analyzer Score</th>
-                    <th>Screening Interview</th>
                     <th>Calendly Link Sent</th>
                     <th>Calendly Link Status</th>
+                    <th>Screening Interview</th>
                     <th>NDA &amp; ICA</th>
                     <th>Slack</th>
                     <th>Bootcamp Attempts</th>
@@ -811,9 +811,9 @@ function CandidatePool() {
                               )}
                             </td>
                             {[
-                              { field: 'screeningInterview', options: SCREENING_INTERVIEW_OPTIONS, label: 'Screening Interview' },
                               { field: 'calendlyLinkSent', options: CALENDLY_SENT_OPTIONS, label: 'Calendly Link Sent' },
                               { field: 'calendlyLinkStatus', options: CALENDLY_STATUS_OPTIONS, label: 'Calendly Link Status' },
+                              { field: 'screeningInterview', options: SCREENING_INTERVIEW_OPTIONS, label: 'Screening Interview' },
                               { field: 'ndaIca', options: NDA_ICA_OPTIONS, label: 'NDA & ICA' },
                               { field: 'slackStatus', options: SLACK_STATUS_OPTIONS, label: 'Slack' },
                               { field: 'bootcampAttempts', options: BOOTCAMP_ATTEMPTS_OPTIONS, label: 'Bootcamp Attempts' },

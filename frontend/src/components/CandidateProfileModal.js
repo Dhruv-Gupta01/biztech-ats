@@ -18,9 +18,9 @@ const DEFAULT_PROJECTS = ['Terminus', 'Snorkle', 'Alegion'];
 
 // Field order matches the Candidate Pool table columns for FREELANCE CODING.
 const FREELANCE_FIELDS = [
-  { key: 'screeningInterview', label: 'Screening Interview', options: SCREENING_INTERVIEW_OPTIONS },
   { key: 'calendlyLinkSent', label: 'Calendly Link Sent', options: CALENDLY_SENT_OPTIONS },
   { key: 'calendlyLinkStatus', label: 'Calendly Link Status', options: CALENDLY_STATUS_OPTIONS },
+  { key: 'screeningInterview', label: 'Screening Interview', options: SCREENING_INTERVIEW_OPTIONS },
   { key: 'ndaIca', label: 'NDA & ICA', options: NDA_ICA_OPTIONS },
   { key: 'slackStatus', label: 'Slack', options: SLACK_STATUS_OPTIONS },
   { key: 'bootcampAttempts', label: 'Bootcamp Attempts', options: BOOTCAMP_ATTEMPTS_OPTIONS },
