@@ -35,7 +35,13 @@ function buildAttachmentLinks(attachments) {
 
 // Sends one personalized email per candidate. Returns a per-recipient result
 // array so a partial failure (one bad address) doesn't hide as a full success.
-async function sendOutreachEmails(recipients, rawSubject, rawBody, attachments = []) {
+//
+// Two kinds of attachment travel together:
+//   - `attachments` ({ name, url })  → rendered as clickable links in the body,
+//     since a URL is not a file we can attach.
+//   - `files` ({ name, contentType, content: Buffer }) → real MIME file parts
+//     delivered with the message, from a recruiter's device upload.
+async function sendOutreachEmails(recipients, rawSubject, rawBody, attachments = [], files = []) {
   if (process.env.EMAIL_ENABLED !== 'true') {
     return recipients.map((r) => ({
       email: r.email,
@@ -50,6 +56,13 @@ async function sendOutreachEmails(recipients, rawSubject, rawBody, attachments =
   const results = [];
   const attachmentLinks = buildAttachmentLinks(attachments);
 
+  // Resend takes `content` as a Buffer or a base64 string, plus a filename.
+  // Built once — the same files go to every recipient.
+  const emailAttachments = files.map((f) => ({
+    filename: f.name,
+    content: Buffer.isBuffer(f.content) ? f.content : Buffer.from(f.content || '')
+  }));
+
   for (const r of recipients) {
     const subject = fillTemplate(rawSubject, r.vars);
     let body = fillTemplate(rawBody, r.vars);
@@ -57,13 +70,21 @@ async function sendOutreachEmails(recipients, rawSubject, rawBody, attachments =
       body += attachmentLinks;
     }
     try {
-      await getResendClient().emails.send({
+      const payload = {
         from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
         to: r.email,
         subject,
         text: body
+      };
+      if (emailAttachments.length > 0) {
+        payload.attachments = emailAttachments;
+      }
+      await getResendClient().emails.send(payload);
+      results.push({
+        email: r.email,
+        sent: true,
+        attachedFiles: emailAttachments.length
       });
-      results.push({ email: r.email, sent: true });
     } catch (err) {
       results.push({ email: r.email, sent: false, reason: err.message });
     }

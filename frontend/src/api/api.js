@@ -184,12 +184,28 @@ export async function deleteCandidateRecord(id) {
   return request(`${BASE_URL}/candidates/${id}`, { method: 'DELETE' });
 }
 // --- Outreach ---
-export async function sendOutreachEmail(candidateIds, subject, body, attachments) {
+export async function sendOutreachEmail(candidateIds, subject, body, attachments, attachmentIds = []) {
   return request(`${BASE_URL}/outreach/send`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ candidateIds, subject, body, attachments })
+    body: JSON.stringify({ candidateIds, subject, body, attachments, attachmentIds })
   });
+}
+
+// Upload files picked from the recruiter's device. Returns metadata for each
+// stored file (never the bytes), which the UI references by id at send time.
+export async function uploadOutreachAttachments(files) {
+  const formData = new FormData();
+  files.forEach((f) => formData.append('files', f));
+  return request(`${BASE_URL}/outreach/attachments`, { method: 'POST', body: formData });
+}
+
+export async function fetchOutreachAttachments() {
+  return request(`${BASE_URL}/outreach/attachments`);
+}
+
+export async function deleteOutreachAttachment(id) {
+  return request(`${BASE_URL}/outreach/attachments/${id}`, { method: 'DELETE' });
 }
 export async function fetchRetentionStatus() {
   return request(`${BASE_URL}/retention/status`);

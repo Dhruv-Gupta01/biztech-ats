@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { fetchEmailTemplates, createEmailTemplate, updateEmailTemplate, deleteEmailTemplate } from '../api/api';
+import React, { useEffect, useRef, useState } from 'react';
+import { fetchEmailTemplates, createEmailTemplate, updateEmailTemplate, deleteEmailTemplate, uploadOutreachAttachments } from '../api/api';
 
 function TemplateManager({ templates, setTemplates, onTemplateSelect, onClose }) {
   const [loading, setLoading] = useState(true);
@@ -10,6 +10,47 @@ function TemplateManager({ templates, setTemplates, onTemplateSelect, onClose })
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('list');
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const templateFileInputRef = useRef(null);
+
+  const formatSize = (bytes) => {
+    if (!bytes) return '';
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  // Uploads files straight onto the template being created/edited, so every
+  // future send with this template carries them automatically.
+  const handleTemplateFiles = async (e) => {
+    const picked = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (picked.length === 0) return;
+
+    setUploadingFile(true);
+    setUploadError('');
+    try {
+      const res = await uploadOutreachAttachments(picked);
+      const uploaded = res.data || [];
+      setForm((prev) => ({
+        ...prev,
+        attachments: [
+          ...prev.attachments,
+          ...uploaded.map((f) => ({
+            type: 'file',
+            attachmentId: f._id,
+            name: f.name,
+            size: f.size,
+            url: ''
+          }))
+        ]
+      }));
+    } catch (err) {
+      setUploadError(err.message || 'Upload failed.');
+    } finally {
+      setUploadingFile(false);
+    }
+  };
 
   useEffect(() => {
     fetchEmailTemplates()
@@ -129,6 +170,74 @@ function TemplateManager({ templates, setTemplates, onTemplateSelect, onClose })
     }));
   };
 
+  // Shared by the create and edit forms — links and uploaded files side by side.
+  const renderAttachmentEditor = () => (
+    <div style={{ marginBottom: 14 }}>
+      <label style={{ display: 'block', fontSize: 13, color: 'var(--text-500)', marginBottom: 6, fontWeight: 600 }}>
+        Attachments (optional)
+      </label>
+
+      {uploadError && (
+        <p style={{ fontSize: 12, color: 'var(--red)', margin: '0 0 8px' }}>⚠️ {uploadError}</p>
+      )}
+
+      {form.attachments.map((a, i) => (
+        <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+          {a.type === 'file' ? (
+            <>
+              <span style={{ flex: 1, padding: 8, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 4, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                📎 {a.name}
+              </span>
+              <span style={{ fontSize: 11.5, color: 'var(--text-500)', minWidth: 60, textAlign: 'right' }}>{formatSize(a.size)}</span>
+            </>
+          ) : (
+            <>
+              <input
+                type="text"
+                value={a.name}
+                onChange={(e) => updateAttachment(i, 'name', e.target.value)}
+                placeholder="File name"
+                style={{ flex: 1, padding: 8, borderRadius: 4, border: '1px solid var(--border)' }}
+              />
+              <input
+                type="url"
+                value={a.url}
+                onChange={(e) => updateAttachment(i, 'url', e.target.value)}
+                placeholder="https://..."
+                style={{ flex: 2, padding: 8, borderRadius: 4, border: '1px solid var(--border)' }}
+              />
+            </>
+          )}
+          <button type="button" onClick={() => removeAttachment(i)} style={{ padding: '8px 12px', background: 'var(--red)', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}>Remove</button>
+        </div>
+      ))}
+
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button type="button" onClick={addAttachment} style={{ padding: '8px 12px', background: 'var(--bg)', color: 'var(--text-500)', border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer' }}>
+          + Add link
+        </button>
+        <input
+          ref={templateFileInputRef}
+          type="file"
+          multiple
+          style={{ display: 'none' }}
+          onChange={handleTemplateFiles}
+        />
+        <button
+          type="button"
+          onClick={() => templateFileInputRef.current && templateFileInputRef.current.click()}
+          disabled={uploadingFile}
+          style={{ padding: '8px 12px', background: 'var(--bg)', color: 'var(--text-500)', border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer' }}
+        >
+          {uploadingFile ? 'Uploading...' : '⭱ Upload file from device'}
+        </button>
+      </div>
+      <p style={{ fontSize: 11.5, color: 'var(--text-500)', margin: '6px 0 0' }}>
+        Links are sent as clickable text. Files are attached to the email itself (max 10 files, 10MB each, 30MB total).
+      </p>
+    </div>
+  );
+
   if (loading) return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
@@ -186,7 +295,13 @@ function TemplateManager({ templates, setTemplates, onTemplateSelect, onClose })
                             <strong>Attachments:</strong>
                             <ul style={{ margin: '4px 0 0 18px', padding: 0 }}>
                               {t.attachments.map((a, i) => (
-                                <li key={i}><a href={a.url} target="_blank" rel="noopener noreferrer">{a.name || a.url}</a></li>
+                                <li key={i}>
+                                  {a.type === 'file' || a.attachmentId ? (
+                                    <>📎 {a.name} {a.size ? <span style={{ color: 'var(--text-300)' }}>({formatSize(a.size)})</span> : null}</>
+                                  ) : (
+                                    <a href={a.url} target="_blank" rel="noopener noreferrer">{a.name || a.url}</a>
+                                  )}
+                                </li>
                               ))}
                             </ul>
                           </div>
@@ -263,31 +378,7 @@ function TemplateManager({ templates, setTemplates, onTemplateSelect, onClose })
                     style={{ width: '100%', padding: 10, borderRadius: 6, border: '1px solid var(--border)', minHeight: 160, resize: 'vertical', fontSize: 14 }}
                   />
                 </div>
-                <div style={{ marginBottom: 14 }}>
-                  <label style={{ display: 'block', fontSize: 13, color: 'var(--text-500)', marginBottom: 6, fontWeight: 600 }}>Attachments (optional)</label>
-                  {form.attachments.map((a, i) => (
-                    <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                      <input
-                        type="text"
-                        value={a.name}
-                        onChange={(e) => updateAttachment(i, 'name', e.target.value)}
-                        placeholder="File name"
-                        style={{ flex: 1, padding: 8, borderRadius: 4, border: '1px solid var(--border)' }}
-                      />
-                      <input
-                        type="url"
-                        value={a.url}
-                        onChange={(e) => updateAttachment(i, 'url', e.target.value)}
-                        placeholder="https://..."
-                        style={{ flex: 2, padding: 8, borderRadius: 4, border: '1px solid var(--border)' }}
-                      />
-                      <button type="button" onClick={() => removeAttachment(i)} style={{ padding: '8px 12px', background: 'var(--red)', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}>Remove</button>
-                    </div>
-                  ))}
-                  <button type="button" onClick={addAttachment} style={{ padding: '8px 12px', background: 'var(--bg)', color: 'var(--text-500)', border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer' }}>
-                    + Add Attachment
-                  </button>
-                </div>
+                {renderAttachmentEditor()}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
                   <button type="button" onClick={() => { setShowCreate(false); setActiveTab('list'); resetForm(); }} disabled={saving} style={{ padding: '8px 16px', background: 'var(--bg)', color: 'var(--text-500)', border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer' }}>Cancel</button>
                   <button type="submit" disabled={saving} style={{ padding: '8px 16px', background: 'var(--bg)', color: 'var(--text-500)', border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer' }}>
@@ -334,31 +425,7 @@ function TemplateManager({ templates, setTemplates, onTemplateSelect, onClose })
                     style={{ width: '100%', padding: 10, borderRadius: 6, border: '1px solid var(--border)', minHeight: 160, resize: 'vertical', fontSize: 14 }}
                   />
                 </div>
-                <div style={{ marginBottom: 14 }}>
-                  <label style={{ display: 'block', fontSize: 13, color: 'var(--text-500)', marginBottom: 6, fontWeight: 600 }}>Attachments (optional)</label>
-                  {form.attachments.map((a, i) => (
-                    <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                      <input
-                        type="text"
-                        value={a.name}
-                        onChange={(e) => updateAttachment(i, 'name', e.target.value)}
-                        placeholder="File name"
-                        style={{ flex: 1, padding: 8, borderRadius: 4, border: '1px solid var(--border)' }}
-                      />
-                      <input
-                        type="url"
-                        value={a.url}
-                        onChange={(e) => updateAttachment(i, 'url', e.target.value)}
-                        placeholder="https://..."
-                        style={{ flex: 2, padding: 8, borderRadius: 4, border: '1px solid var(--border)' }}
-                      />
-                      <button type="button" onClick={() => removeAttachment(i)} style={{ padding: '8px 12px', background: 'var(--red)', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}>Remove</button>
-                    </div>
-                  ))}
-                  <button type="button" onClick={addAttachment} style={{ padding: '8px 12px', background: 'var(--bg)', color: 'var(--text-500)', border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer' }}>
-                    + Add Attachment
-                  </button>
-                </div>
+                {renderAttachmentEditor()}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
                   <button type="button" onClick={() => { setEditingId(null); setActiveTab('list'); resetForm(); }} disabled={saving} style={{ padding: '8px 16px', background: 'var(--bg)', color: 'var(--text-500)', border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer' }}>Cancel</button>
                   <button type="submit" disabled={saving} style={{ padding: '8px 16px', background: 'var(--bg)', color: 'var(--text-500)', border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer' }}>

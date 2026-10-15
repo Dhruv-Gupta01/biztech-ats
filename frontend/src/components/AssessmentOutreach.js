@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { emailTemplates } from '../data/dummyData';
-import { fetchCandidates, fetchRoles, sendOutreachEmail, fetchEmailTemplates, fetchProjects } from '../api/api';
+import { fetchCandidates, fetchRoles, sendOutreachEmail, fetchEmailTemplates, fetchProjects, uploadOutreachAttachments, deleteOutreachAttachment, fetchOutreachAttachments } from '../api/api';
 import TemplateManager from './TemplateManager';
 import {
   isFreelanceRoleCode, isFreelanceFilter, isFreelanceCandidate, effectiveEmploymentType, typeLabel
@@ -78,6 +78,21 @@ function AssessmentOutreach() {
   const [sendResult, setSendResult] = useState(null);
   const [showTemplateManager, setShowTemplateManager] = useState(false);
 
+  // Attachments for THIS send. `linkAttachments` are plain URLs; `files` are
+  // real files uploaded from the recruiter's device and stored server-side.
+  const [linkAttachments, setLinkAttachments] = useState([]);
+  const [files, setFiles] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const [storedAttachments, setStoredAttachments] = useState([]);
+  const fileInputRef = useRef(null);
+
+  const formatSize = (bytes) => {
+    if (!bytes) return '';
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
   const freelanceMode = isFreelanceFilter(empTypeFilter, roleFilter);
 
   useEffect(() => {
@@ -99,6 +114,65 @@ function AssessmentOutreach() {
     }).catch(() => {});
   }, []);
 
+  // Previously uploaded files, so a template can re-attach one without the
+  // recruiter having to pick it off their disk again.
+  useEffect(() => {
+    fetchOutreachAttachments()
+      .then((res) => setStoredAttachments(res.data || []))
+      .catch(() => {});
+  }, []);
+
+  const handleFilesSelected = async (e) => {
+    const picked = Array.from(e.target.files || []);
+    e.target.value = ''; // allow re-picking the same file
+    if (picked.length === 0) return;
+
+    if (files.length + picked.length > 10) {
+      setUploadError('You can attach at most 10 files per email.');
+      return;
+    }
+
+    setUploading(true);
+    setUploadError('');
+    try {
+      const res = await uploadOutreachAttachments(picked);
+      const uploaded = res.data || [];
+      setFiles((prev) => [...prev, ...uploaded]);
+      setStoredAttachments((prev) => [...uploaded, ...prev]);
+      if (uploaded.length < picked.length) {
+        setUploadError(`${picked.length - uploaded.length} file(s) could not be uploaded. Check size limits (10MB per file, 30MB total).`);
+      }
+    } catch (err) {
+      setUploadError(err.message || 'Upload failed.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const removeFile = async (id) => {
+    const removed = files.find((f) => f._id === id);
+    setFiles((prev) => prev.filter((f) => f._id !== id));
+    // Only delete from the server if no template still references it.
+    const referencedByTemplate = templates.some((t) =>
+      (t.attachments || []).some((a) => a.attachmentId === id)
+    );
+    if (removed && !referencedByTemplate) {
+      deleteOutreachAttachment(id).catch(() => {});
+    }
+  };
+
+  const addLinkAttachment = () => setLinkAttachments((prev) => [...prev, { name: '', url: '' }]);
+
+  const updateLinkAttachment = (index, field, value) => {
+    setLinkAttachments((prev) => prev.map((a, i) => (i === index ? { ...a, [field]: value } : a)));
+  };
+
+  const removeLinkAttachment = (index) => {
+    setLinkAttachments((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const clearAttachments = () => { setLinkAttachments([]); setFiles([]); };
+
   // Fetch templates from API
   const [templates, setTemplates] = useState([]);
   useEffect(() => {
@@ -118,6 +192,10 @@ function AssessmentOutreach() {
   const template = templates.find((t) => t._id === templateId || t.id === templateId);
   const primaryCandidate = candidates.find((c) => c._id === selectedIds[0]) || candidates[0];
   const role = primaryCandidate ? roles.find((r) => r.code === primaryCandidate.roleCode) : null;
+
+  // Total = template's own attachments + whatever was added for this send.
+  const templateAttachmentCount = (template?.attachments || []).length;
+  const totalAttachmentCount = templateAttachmentCount + linkAttachments.filter((a) => a.url).length + files.length;
 
   const vars = useMemo(() => {
     if (!primaryCandidate) return { candidateName: '', roleTitle: '', roleCode: '' };
@@ -211,7 +289,23 @@ function AssessmentOutreach() {
     setSending(true);
     setSendResult(null);
     try {
-      const res = await sendOutreachEmail(selectedIds, template.subject, template.body, template.attachments || []);
+      // Template's own attachments (links + saved files) plus anything added
+      // for this specific send — template first, so ad-hoc ones are additive.
+      const templateLinks = (template.attachments || [])
+        .filter((a) => a.type === 'link' && a.url)
+        .map((a) => ({ name: a.name, url: a.url }));
+      const templateFileIds = (template.attachments || [])
+        .filter((a) => a.attachmentId)
+        .map((a) => a.attachmentId);
+
+      const attachments = [
+        ...templateLinks,
+        ...linkAttachments.filter((a) => a.url)
+      ];
+      // Ad-hoc files come first so their order matches what the recruiter sees.
+      const attachmentIds = [...files.map((f) => f._id), ...templateFileIds];
+
+      const res = await sendOutreachEmail(selectedIds, template.subject, template.body, attachments, attachmentIds);
       setSendResult({ ok: res.data.failedCount === 0, message: res.message, details: res.data.results });
     } catch (err) {
       setSendResult({ ok: false, message: err.message, details: [] });
@@ -366,10 +460,110 @@ function AssessmentOutreach() {
                 {templates.map((t) => <option key={t._id || t.id} value={t._id || t.id}>{t.name}</option>)}
               </select>
 
-              <div className="template-vars">
-                <span className="var-chip">{'{{candidateName}}'}</span>
-                <span className="var-chip">{'{{roleTitle}}'}</span>
+            <div className="template-vars">
+              <span className="var-chip">{'{{candidateName}}'}</span>
+              <span className="var-chip">{'{{roleTitle}}'}</span>
+            </div>
+
+            {uploadError && (
+              <div className="alert alert-error" style={{ marginTop: 10 }}>⚠️ {uploadError}</div>
+            )}
+
+            {/* Attachments: links (rendered in the body) and real files from the
+                recruiter's device (delivered as actual email attachments). */}
+            <div className="outreach-attachments">
+              <div className="outreach-attachments-head">
+                <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-500)', margin: 0 }}>
+                  Attachments {totalAttachmentCount > 0 && <span className="outreach-filter-count">{totalAttachmentCount}</span>}
+                </label>
+                {(linkAttachments.length > 0 || files.length > 0) && (
+                  <button type="button" className="outreach-attachments-clear" onClick={clearAttachments}>Clear all</button>
+                )}
               </div>
+
+              <p style={{ fontSize: 11.5, color: 'var(--text-500)', margin: '4px 0 10px' }}>
+                Links appear as clickable text in the email. Files are sent as real attachments (max 10 files, 10MB each, 30MB total).
+              </p>
+
+              {/* Files from device */}
+              <div className="outreach-file-list">
+                {files.map((f) => (
+                  <div key={f._id} className="outreach-file-chip">
+                    <span className="outreach-file-icon">📎</span>
+                    <span className="outreach-file-name" title={f.name}>{f.name}</span>
+                    <span className="outreach-file-size">{formatSize(f.size)}</span>
+                    <button type="button" onClick={() => removeFile(f._id)} title="Remove attachment">×</button>
+                  </div>
+                ))}
+              </div>
+              <div className="outreach-attachment-actions">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={handleFilesSelected}
+                />
+                <button type="button" className="btn-secondary" onClick={() => fileInputRef.current && fileInputRef.current.click()} disabled={uploading}>
+                  {uploading ? 'Uploading...' : '⭱ Add files from device'}
+                </button>
+                <button type="button" className="btn-secondary" onClick={addLinkAttachment}>+ Add link</button>
+              </div>
+
+              {/* Link attachments */}
+              {linkAttachments.map((a, i) => (
+                <div key={i} className="outreach-link-row">
+                  <input
+                    type="text"
+                    value={a.name}
+                    onChange={(e) => updateLinkAttachment(i, 'name', e.target.value)}
+                    placeholder="Label (e.g. Job Description)"
+                  />
+                  <input
+                    type="url"
+                    value={a.url}
+                    onChange={(e) => updateLinkAttachment(i, 'url', e.target.value)}
+                    placeholder="https://..."
+                  />
+                  <button type="button" onClick={() => removeLinkAttachment(i)} title="Remove link">×</button>
+                </div>
+              ))}
+
+              {/* Re-use a previously uploaded file */}
+              {storedAttachments.length > 0 && (
+                <details className="outreach-stored-files">
+                  <summary>Re-use a previously uploaded file ({storedAttachments.length})</summary>
+                  <div className="outreach-stored-list">
+                    {storedAttachments.map((s) => {
+                      const alreadyAdded = files.some((f) => f._id === s._id);
+                      return (
+                        <div key={s._id} className="outreach-stored-item">
+                          <span className="outreach-file-name" title={s.name}>{s.name}</span>
+                          <span className="outreach-file-size">{formatSize(s.size)}</span>
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            disabled={alreadyAdded}
+                            onClick={async () => {
+                              setFiles((prev) => [...prev, s]);
+                            }}
+                          >
+                            {alreadyAdded ? 'Added' : 'Add'}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </details>
+              )}
+
+              {totalAttachmentCount === 0 && (
+                <p style={{ fontSize: 12, color: 'var(--text-500)', margin: '6px 0 0' }}>
+                  No attachments for this send yet.
+                </p>
+              )}
+            </div>
+
 
               {primaryCandidate && (
                 <>
@@ -380,18 +574,50 @@ function AssessmentOutreach() {
                     <strong>Subject:</strong> {previewSubject}
                     {'\n\n'}
                     {previewBody}
-                    {template && template.attachments && template.attachments.length > 0 && (
-                      <>
-                        {'\n\n'}
-                        <strong>Attachments:</strong>
-                        <ul style={{ margin: '4px 0 0 18px', padding: 0 }}>
-                          {template.attachments.map((a, i) => (
-                            <li key={i}><a href={a.url} target="_blank" rel="noopener noreferrer">{a.name || a.url}</a></li>
-                          ))}
-                        </ul>
-                      </>
-                    )}
+                    {(() => {
+                      const allLinks = [
+                        ...(template?.attachments || []).filter((a) => a.type === 'link' && a.url).map((a) => ({ name: a.name, url: a.url })),
+                        ...linkAttachments.filter((a) => a.url)
+                      ];
+                      if (allLinks.length > 0) {
+                        return (
+                          <>
+                            {'\n\n'}
+                            <strong>Attachments:</strong>
+                            {'\n'}
+                            {allLinks.map((a, i) => (
+                              <span key={i}>– {a.name || a.url}: {a.url}{i < allLinks.length - 1 ? '\n' : ''}</span>
+                            ))}
+                          </>
+                        );
+                      }
+                      return null;
+                    })()}
                   </div>
+                  {(files.length > 0 || (template?.attachments || []).some((a) => a.attachmentId)) && (
+                    <div className="outreach-preview-files">
+                      <strong style={{ fontSize: 12.5, color: 'var(--text-500)' }}>
+                        Files sent with this email ({files.length + (template?.attachments || []).filter((a) => a.attachmentId).length}):
+                      </strong>
+                      <div className="outreach-file-list" style={{ marginTop: 6 }}>
+                        {files.map((f) => (
+                          <div key={f._id} className="outreach-file-chip">
+                            <span className="outreach-file-icon">📎</span>
+                            <span className="outreach-file-name" title={f.name}>{f.name}</span>
+                            <span className="outreach-file-size">{formatSize(f.size)}</span>
+                          </div>
+                        ))}
+                        {(template?.attachments || []).filter((a) => a.attachmentId).map((a, i) => (
+                          <div key={`t${i}`} className="outreach-file-chip">
+                            <span className="outreach-file-icon">📎</span>
+                            <span className="outreach-file-name" title={a.name}>{a.name}</span>
+                            <span className="outreach-file-size">{formatSize(a.size)}</span>
+                            <span className="outreach-file-from-template" title="Saved on the template">template</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
 
