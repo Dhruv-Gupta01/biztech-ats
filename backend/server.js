@@ -14,6 +14,7 @@ const retentionRoutes = require('./routes/retentionRoutes');
 const etlRoutes = require('./routes/etlRoutes');
 const formSyncRoutes = require('./routes/formSyncRoutes');
 const projectRoutes = require('./routes/projectRoutes');
+const statisticsRoutes = require('./routes/statisticsRoutes');
 const { runRetentionCleanup } = require('./services/retentionService');
 const { runNaukriEtl } = require('./services/naukriEtlService');
 
@@ -36,6 +37,7 @@ app.use('/api/retention', retentionRoutes);
 app.use('/api/etl', etlRoutes);
 app.use('/api/form-sync', formSyncRoutes);
 app.use('/api/projects', projectRoutes);
+app.use('/api/statistics', statisticsRoutes);
 
 app.get('/', (req, res) => res.send('BizTech ATS API is running'));
 // Daily retention sweep at 2 AM server time. Safe to leave running even when

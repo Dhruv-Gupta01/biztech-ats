@@ -11,7 +11,8 @@ const links = [
   { id: 'slack', label: 'Slack Groups', icon: '#' },
   { id: 'forms', label: 'Google Forms', icon: '📋' },
   { id: 'roleCodeData', label: 'Role Code Data', icon: '📊' },
-  { id: 'bulkUpload', label: 'Bulk Resume Upload', icon: '📤' }
+  { id: 'bulkUpload', label: 'Bulk Resume Upload', icon: '📤' },
+  { id: 'statistics', label: 'Statistics and Report', icon: '📈' }
 ];
 
 function Sidebar({ view, setView }) {

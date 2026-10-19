@@ -322,3 +322,18 @@ export async function createProject(project) {
 export async function deleteProject(id) {
   return request(`${BASE_URL}/projects/${id}`, { method: 'DELETE' });
 }
+
+// --- Statistics & Report ---
+export async function fetchStatistics(params = {}) {
+  const qs = new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== ''))
+  ).toString();
+  return request(`${BASE_URL}/statistics?${qs}`);
+}
+
+export async function exportStatisticsCSV(params = {}) {
+  const qs = new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== ''))
+  ).toString();
+  return fetch(`${BASE_URL}/statistics/export/csv?${qs}`);
+}

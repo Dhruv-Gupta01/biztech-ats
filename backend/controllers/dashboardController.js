@@ -2,18 +2,6 @@ const Candidate = require('../models/Candidate');
 const Role = require('../models/Role');
 
 const STATUS_ORDER = [
-  'Information Form Response',
-  'Interview 1',
-  'Interview 1 Shortlisted',
-  'Interview 2',
-  'Interview 2 Shortlisted',
-  'Assessment 1',
-  'Assessment 1 Shortlisted',
-  'Assessment 1 Passed',
-  'Assessment 2',
-  'Assessment 2 Shortlisted',
-  'Assessment 2 Passed',
-  'Final Round Shortlisted',
   'Selected',
   'Rejected',
   'Not Appeared',
@@ -22,18 +10,6 @@ const STATUS_ORDER = [
   'Not interested'
 ];
 const STATUS_COLORS = {
-  'Information Form Response': '#6B7280',
-  'Interview 1': 'var(--blue)',
-  'Interview 1 Shortlisted': 'var(--purple)',
-  'Interview 2': 'var(--blue)',
-  'Interview 2 Shortlisted': 'var(--purple)',
-  'Assessment 1': 'var(--blue)',
-  'Assessment 1 Shortlisted': 'var(--purple)',
-  'Assessment 1 Passed': 'var(--green)',
-  'Assessment 2': 'var(--blue)',
-  'Assessment 2 Shortlisted': 'var(--purple)',
-  'Assessment 2 Passed': 'var(--green)',
-  'Final Round Shortlisted': 'var(--green)',
   'Selected': 'var(--green)',
   'Rejected': 'var(--red)',
   'Not Appeared': 'var(--red)',

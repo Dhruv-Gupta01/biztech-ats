@@ -6,14 +6,7 @@ function PipelineBar({ stages }) {
     <div>
       <div className="pipeline-bar">
         {stages.map((s) => (
-          <div key={s.label} className="pipeline-seg" style={{ width: `${(s.count / total) * 100}%`, background: s.color }} title={`${s.label}: ${s.count}`}>
-            {s.count}
-          </div>
-        ))}
-      </div>
-      <div className="pipeline-legend">
-        {stages.map((s) => (
-          <span key={s.label}><span className="swatch" style={{ background: s.color }} />{s.label} ({s.count})</span>
+          <div key={s.label} className="pipeline-seg" style={{ width: total > 0 ? `${(s.count / total) * 100}%` : '0%', background: s.color }} title={`${s.label}: ${s.count}`} />
         ))}
       </div>
     </div>
