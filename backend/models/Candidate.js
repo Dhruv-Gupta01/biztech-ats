@@ -8,7 +8,7 @@ const candidateSchema = new mongoose.Schema({
   roleCode: { type: String, required: true, uppercase: true, trim: true },
   employmentType: {
     type: String,
-    enum: ['Full-Time', 'Part-Time', 'Contract', 'Internship', 'FREELANCE CODING'],
+    enum: ['Full-Time', 'Part-Time', 'Contract', 'FREELANCE CODING', 'Medical Hiring'],
     default: 'Full-Time'
   },
   yearsOfExperience: { type: Number, required: true, min: 0 },
@@ -38,6 +38,15 @@ const candidateSchema = new mongoose.Schema({
   onboarding: { type: String, enum: ['Sent', 'Not Sent', 'Not Interested', 'Done'], default: null },
   project: { type: String, default: null },
   projectStatus: { type: String, enum: ['On Hold', 'Complete', 'Not Active', 'In Pipeline'], default: null },
+
+  // MEDICAL HIRING specific fields.
+  resumeAnalyzerStatus: { type: String, enum: ['Selected', 'Not selected'], default: null },
+  medicalAssessments: { type: String, enum: ['Sent', 'Not Sent'], default: null },
+  medicalAssessmentsSubmission: { type: String, enum: ['Received', 'Not received', 'Not interested'], default: null },
+  medicalAssessmentsSubmissionNote: { type: String, default: '' },
+  medicalSubmissionsEvaluation: { type: String, enum: ['Pass', 'Fail', 'Pending'], default: null },
+  medicalOnboarding: { type: String, enum: ['Sent', 'Not sent', 'Done', 'Not done', 'Not interested'], default: null },
+  medicalSlack: { type: String, enum: ['Joined', 'Not joined', 'Not interested'], default: null },
 
   status: {
     type: String,
@@ -133,6 +142,10 @@ candidateSchema.pre('save', function applyFreelanceRoleCode(next) {
   if (this.roleCode && this.roleCode.toUpperCase().trim().startsWith('F')) {
     this.employmentType = 'FREELANCE CODING';
   }
+  // Role codes starting with "M" are always MEDICAL HIRING candidates.
+  if (this.roleCode && this.roleCode.toUpperCase().trim().startsWith('M')) {
+    this.employmentType = 'Medical Hiring';
+  }
   next();
 });
 
@@ -141,6 +154,10 @@ candidateSchema.pre('save', function applyFreelanceRoleCode(next) {
 function enforceFreelanceForRoleCode(doc) {
   if (doc && doc.roleCode && doc.roleCode.toUpperCase().trim().startsWith('F')) {
     doc.employmentType = 'FREELANCE CODING';
+  }
+  // M-prefixed role codes are MEDICAL HIRING
+  if (doc && doc.roleCode && doc.roleCode.toUpperCase().trim().startsWith('M')) {
+    doc.employmentType = 'Medical Hiring';
   }
 }
 candidateSchema.post('init', enforceFreelanceForRoleCode);

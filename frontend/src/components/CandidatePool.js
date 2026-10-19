@@ -10,7 +10,7 @@ import {
 } from '../api/api';
 import { isFreelanceRoleCode, isFreelanceFilter, effectiveEmploymentType } from '../utils/employment';
 
-const typeLabel = (t) => (t === 'Contract' ? 'Contractual' : t === 'Part-Time' ? 'Part Time' : t === 'Internship' ? 'Internship' : t === 'FREELANCE CODING' ? 'Freelance Coding' : 'Full Time');
+const typeLabel = (t) => (t === 'Contract' ? 'Contractual' : t === 'Part-Time' ? 'Part Time' : t === 'FREELANCE CODING' ? 'Freelance Coding' : t === 'Medical Hiring' ? 'Medical Hiring' : 'Full Time');
 const money = (n) => (n ? `₹${(n / 100000).toFixed(1)}L` : '—');
 
 const SCREENING_INTERVIEW_OPTIONS = ['Pass', 'Fail', 'Not Appeared', 'Rescheduled', 'Not interested', 'Referred to another position'];
@@ -23,6 +23,14 @@ const BOOTCAMP_STATUS_OPTIONS = ['Pass', 'Fail', 'Full Fail', 'Not Active', 'Act
 const ONBOARDING_OPTIONS = ['Sent', 'Not Sent', 'Not Interested', 'Done'];
 const PROJECT_STATUS_OPTIONS = ['On Hold', 'Complete', 'Not Active', 'In Pipeline'];
 const DEFAULT_PROJECTS = ['Terminus', 'Snorkle', 'Alegion'];
+
+const MEDICAL_RESUME_ANALYZER_STATUS_OPTIONS = ['Selected', 'Not selected'];
+const MEDICAL_ASSESSMENTS_OPTIONS = ['Sent', 'Not Sent'];
+const MEDICAL_ASSESSMENTS_SUBMISSION_OPTIONS = ['Received', 'Not received', 'Not interested'];
+const MEDICAL_SUBMISSIONS_EVALUATION_OPTIONS = ['Pass', 'Fail', 'Pending'];
+const MEDICAL_ONBOARDING_OPTIONS = ['Sent', 'Not sent', 'Done', 'Not done', 'Not interested'];
+const MEDICAL_SLACK_OPTIONS = ['Joined', 'Not joined', 'Not interested'];
+const MEDICAL_PROJECT_STATUS_OPTIONS = ['Active', 'Not Active', 'On hold', 'In pipeline'];
 
 const STATUS_OPTIONS = [
   'Information Form Response',
@@ -190,6 +198,17 @@ function CandidatePool() {
     } catch (err) {
       // Surface the failure instead of silently reverting the dropdown.
       console.error(`Failed to save ${field}:`, err);
+      setFreelanceSaveError(`Could not save ${field}: ${err.message}`);
+      setTimeout(() => setFreelanceSaveError(''), 8000);
+    }
+  };
+
+  const saveMedicalField = async (id, field, value) => {
+    try {
+      await updateCandidate(id, { [field]: value, changedBy: user?.fullName });
+      setCandidates((prev) => prev.map((c) => (c._id === id ? { ...c, [field]: value } : c)));
+    } catch (err) {
+      console.error(`Failed to save medical field ${field}:`, err);
       setFreelanceSaveError(`Could not save ${field}: ${err.message}`);
       setTimeout(() => setFreelanceSaveError(''), 8000);
     }
@@ -428,18 +447,25 @@ function CandidatePool() {
     }
   };
 
-  const roleCodes = useMemo(() => roles.map((r) => r.code).sort(), [roles]);
+const roleCodes = useMemo(() => roles.map((r) => r.code).sort(), [roles]);
 
-  // Freelance coding view activates when either the Employment Type filter is
-  // FREELANCE CODING or the selected Role Code starts with F (e.g. F-TYPESCRIPT).
-  const freelanceMode = isFreelanceFilter(filters.employmentType, filters.roleCode);
+// Freelance coding view activates when either the Employment Type filter is
+// FREELANCE CODING or CONTRACT (as Contractual uses freelance columns) or the selected Role Code starts with F (e.g. F-TYPESCRIPT).
+const freelanceMode = isFreelanceFilter(filters.employmentType, filters.roleCode) || filters.employmentType === 'Contract';
+// Medical hiring view activates when either the Employment Type filter is
+// MEDICAL HIRING or the selected Role Code starts with M (e.g. M-DOCTOR).
+const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.roleCode && filters.roleCode.toUpperCase().startsWith('M'));
+
 
   const filtered = useMemo(() => {
     return candidates.filter((c) => {
-      // An F-prefixed role code always satisfies a FREELANCE CODING filter,
+      // An F-prefixed role code always satisfies a FREELANCE CODING/CONTRACT filter,
       // regardless of the stored employmentType on the row.
       if (filters.employmentType === 'FREELANCE CODING' && !isFreelanceRoleCode(c.roleCode) && c.employmentType !== 'FREELANCE CODING') return false;
-      if (filters.employmentType && filters.employmentType !== 'FREELANCE CODING' && effectiveEmploymentType(c) !== filters.employmentType) return false;
+      if (filters.employmentType === 'Contract' && !isFreelanceRoleCode(c.roleCode) && c.employmentType !== 'Contract') return false;
+      if (filters.employmentType && filters.employmentType !== 'FREELANCE CODING' && filters.employmentType !== 'Contract' && effectiveEmploymentType(c) !== filters.employmentType) return false;
+      // An M-prefixed role code always satisfies MEDICAL HIRING filter.
+      if (filters.employmentType === 'Medical Hiring' && !c.roleCode.toUpperCase().startsWith('M') && c.employmentType !== 'Medical Hiring') return false;
       if (query) {
         const q = query.toLowerCase();
         const haystack = [
@@ -456,10 +482,10 @@ function CandidatePool() {
   }, [candidates, filters.employmentType, query]);
 
   const exportCSV = () => {
-    const blob = new Blob([toCSV(filtered, freelanceMode)], { type: 'text/csv' });
+    const blob = new Blob([toCSV(filtered, freelanceMode || medicalMode)], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = freelanceMode ? 'freelance_candidates_export.csv' : 'candidate_pool_export.csv'; a.click();
+    a.href = url; a.download = (freelanceMode || medicalMode) ? 'medical_hiring_candidates_export.csv' : 'candidate_pool_export.csv'; a.click();
     URL.revokeObjectURL(url);
   };
 
@@ -676,8 +702,8 @@ function CandidatePool() {
           <option value="Full-Time">Full Time</option>
           <option value="Contract">Contractual</option>
           <option value="Part-Time">Part Time</option>
-          <option value="Internship">Internship</option>
           <option value="FREELANCE CODING">Freelance Coding</option>
+          <option value="Medical Hiring">Medical Hiring</option>
         </select>
         <select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}>
           <option value="">All statuses</option>
@@ -754,6 +780,18 @@ function CandidatePool() {
                     <th>Project</th>
                     <th>Project Status</th>
                   </>
+                ) : medicalMode ? (
+                  <>
+                    <th>Candidate</th><th>Role Code</th><th>Location</th>
+                    <th>Resume Analyzer Status</th>
+                    <th>Assessments</th>
+                    <th>Assessments Submission</th>
+                    <th>Submissions Evaluation</th>
+                    <th>Onboarding</th>
+                    <th>Slack</th>
+                    <th>Project</th>
+                    <th>Project Status</th>
+                  </>
                 ) : (
                   <>
                     <th>Candidate</th><th>Role Code</th><th>Type</th><th>Location</th>
@@ -777,7 +815,7 @@ function CandidatePool() {
                   </>
                 )}
               </tr>
-              {!freelanceMode && (
+              {!freelanceMode && !medicalMode && (
                 <tr>
                   <th colSpan="10"></th>
                   <th colSpan={interviewRounds.length + 2} style={{ padding: 0, borderBottom: '1px solid var(--border)', textAlign: 'center', fontSize: 11, color: 'var(--text-500)' }}>
@@ -798,62 +836,156 @@ function CandidatePool() {
                           <br /><small>{c.email}</small>
                         </td>
                         <td>{c.roleCode}</td>
-                        {freelanceMode ? (
-                          <>
-                            <td>{c.location || '—'}</td>
-                            <td>
-                              {analyzerScores[c._id] ? (
-                                <span style={{ fontWeight: 600, color: analyzerScores[c._id].score >= 7 ? 'var(--green)' : analyzerScores[c._id].score >= 4 ? 'var(--amber)' : 'var(--red)' }}>
-                                  {analyzerScores[c._id].score}/10
-                                </span>
-                              ) : (
-                                <span style={{ color: 'var(--text-500)', fontSize: 12 }}>—</span>
-                              )}
-                            </td>
-                            {[
-                              { field: 'calendlyLinkSent', options: CALENDLY_SENT_OPTIONS, label: 'Calendly Link Sent' },
-                              { field: 'calendlyLinkStatus', options: CALENDLY_STATUS_OPTIONS, label: 'Calendly Link Status' },
-                              { field: 'screeningInterview', options: SCREENING_INTERVIEW_OPTIONS, label: 'Screening Interview' },
-                              { field: 'ndaIca', options: NDA_ICA_OPTIONS, label: 'NDA & ICA' },
-                              { field: 'slackStatus', options: SLACK_STATUS_OPTIONS, label: 'Slack' },
-                              { field: 'bootcampAttempts', options: BOOTCAMP_ATTEMPTS_OPTIONS, label: 'Bootcamp Attempts' },
-                              { field: 'bootcampStatus', options: BOOTCAMP_STATUS_OPTIONS, label: 'Bootcamp Status' },
-                              { field: 'onboarding', options: ONBOARDING_OPTIONS, label: 'Onboarding' },
-                              { field: 'projectStatus', options: PROJECT_STATUS_OPTIONS, label: 'Project Status' }
-                            ].map(({ field, options }) => (
-                              <td key={field}>
+{freelanceMode ? (
+                            <>
+                              <td>{c.location || '—'}</td>
+                              <td>
+                                {analyzerScores[c._id] ? (
+                                  <span style={{ fontWeight: 600, color: analyzerScores[c._id].score >= 7 ? 'var(--green)' : analyzerScores[c._id].score >= 4 ? 'var(--amber)' : 'var(--red)' }}>
+                                    {analyzerScores[c._id].score}/10
+                                  </span>
+                                ) : (
+                                  <span style={{ color: 'var(--text-500)', fontSize: 12 }}>—</span>
+                                )}
+                              </td>
+                              {[
+                                { field: 'calendlyLinkSent', options: CALENDLY_SENT_OPTIONS, label: 'Calendly Link Sent' },
+                                { field: 'calendlyLinkStatus', options: CALENDLY_STATUS_OPTIONS, label: 'Calendly Link Status' },
+                                { field: 'screeningInterview', options: SCREENING_INTERVIEW_OPTIONS, label: 'Screening Interview' },
+                                { field: 'ndaIca', options: NDA_ICA_OPTIONS, label: 'NDA & ICA' },
+                                { field: 'slackStatus', options: SLACK_STATUS_OPTIONS, label: 'Slack' },
+                                { field: 'bootcampAttempts', options: BOOTCAMP_ATTEMPTS_OPTIONS, label: 'Bootcamp Attempts' },
+                                { field: 'bootcampStatus', options: BOOTCAMP_STATUS_OPTIONS, label: 'Bootcamp Status' },
+                                { field: 'onboarding', options: ONBOARDING_OPTIONS, label: 'Onboarding' },
+                                { field: 'projectStatus', options: PROJECT_STATUS_OPTIONS, label: 'Project Status' }
+                              ].map(({ field, options }) => (
+                                <td key={field}>
+                                  <select
+                                    value={c[field] || ''}
+                                    onChange={(e) => saveFreelanceField(c._id, field, e.target.value)}
+                                    style={{ padding: '2px 6px', fontSize: 11, borderRadius: 4, border: '1px solid var(--border)', minWidth: 110 }}
+                                  >
+                                    <option value="">—</option>
+                                    {options.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                                  </select>
+                                  {field === 'calendlyLinkStatus' && (
+                                    <button
+                                      onClick={() => checkCalendlyForCandidate(c._id)}
+                                      disabled={calendlyChecking === c._id}
+                                      title="Fetch booking status from Calendly API (falls back to manual selection if not configured)"
+                                      style={{ display: 'block', marginTop: 4, fontSize: 10, padding: '2px 5px', cursor: 'pointer', borderRadius: 3, border: '1px solid var(--border)', background: 'transparent' }}
+                                    >
+                                      {calendlyChecking === c._id ? 'Checking...' : '↻ Check Calendly'}
+                                    </button>
+                                  )}
+                                </td>
+                              ))}
+                              <td>
                                 <select
-                                  value={c[field] || ''}
-                                  onChange={(e) => saveFreelanceField(c._id, field, e.target.value)}
+                                  value={c.project || ''}
+                                  onChange={(e) => saveFreelanceField(c._id, 'project', e.target.value)}
                                   style={{ padding: '2px 6px', fontSize: 11, borderRadius: 4, border: '1px solid var(--border)', minWidth: 110 }}
                                 >
                                   <option value="">—</option>
-                                  {options.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                                  {projects.map((p) => <option key={p} value={p}>{p}</option>)}
                                 </select>
-                                {field === 'calendlyLinkStatus' && (
-                                  <button
-                                    onClick={() => checkCalendlyForCandidate(c._id)}
-                                    disabled={calendlyChecking === c._id}
-                                    title="Fetch booking status from Calendly API (falls back to manual selection if not configured)"
-                                    style={{ display: 'block', marginTop: 4, fontSize: 10, padding: '2px 5px', cursor: 'pointer', borderRadius: 3, border: '1px solid var(--border)', background: 'transparent' }}
-                                  >
-                                    {calendlyChecking === c._id ? 'Checking...' : '↻ Check Calendly'}
-                                  </button>
+                              </td>
+                            </>
+                          ) : medicalMode ? (
+                            <>
+                              <td>{c.location || '—'}</td>
+                              <td>
+                                {/* Resume Analyzer Score */}
+                                {analyzerScores[c._id] ? (
+                                  <span style={{ fontWeight: 600, color: analyzerScores[c._id].score >= 7 ? 'var(--green)' : analyzerScores[c._id].score >= 4 ? 'var(--amber)' : 'var(--red)' }}>
+                                    {analyzerScores[c._id].score}/10
+                                  </span>
+                                ) : (
+                                  <span style={{ color: 'var(--text-500)', fontSize: 12 }}>—</span>
                                 )}
                               </td>
-                            ))}
-                            <td>
-                              <select
-                                value={c.project || ''}
-                                onChange={(e) => saveFreelanceField(c._id, 'project', e.target.value)}
-                                style={{ padding: '2px 6px', fontSize: 11, borderRadius: 4, border: '1px solid var(--border)', minWidth: 110 }}
-                              >
-                                <option value="">—</option>
-                                {projects.map((p) => <option key={p} value={p}>{p}</option>)}
-                              </select>
-                            </td>
-                          </>
-                        ) : (
+                              <td>
+                                <select
+                                  value={c.resumeAnalyzerStatus || ''}
+                                  onChange={(e) => saveMedicalField(c._id, 'resumeAnalyzerStatus', e.target.value)}
+                                  style={{ padding: '2px 6px', fontSize: 11, borderRadius: 4, border: '1px solid var(--border)', minWidth: 110 }}
+                                >
+                                  <option value="">—</option>
+                                  {MEDICAL_RESUME_ANALYZER_STATUS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                </select>
+                              </td>
+                              <td>
+                                <select
+                                  value={c.medicalAssessments || ''}
+                                  onChange={(e) => saveMedicalField(c._id, 'medicalAssessments', e.target.value)}
+                                  style={{ padding: '2px 6px', fontSize: 11, borderRadius: 4, border: '1px solid var(--border)', minWidth: 110 }}
+                                >
+                                  <option value="">—</option>
+                                  {MEDICAL_ASSESSMENTS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                </select>
+                              </td>
+                              <td>
+                                <select
+                                  value={c.medicalAssessmentsSubmission || ''}
+                                  onChange={(e) => saveMedicalField(c._id, 'medicalAssessmentsSubmission', e.target.value)}
+                                  style={{ padding: '2px 6px', fontSize: 11, borderRadius: 4, border: '1px solid var(--border)', minWidth: 110 }}
+                                >
+                                  <option value="">—</option>
+                                  {MEDICAL_ASSESSMENTS_SUBMISSION_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                </select>
+                              </td>
+                              <td>
+                                <select
+                                  value={c.medicalSubmissionsEvaluation || ''}
+                                  onChange={(e) => saveMedicalField(c._id, 'medicalSubmissionsEvaluation', e.target.value)}
+                                  style={{ padding: '2px 6px', fontSize: 11, borderRadius: 4, border: '1px solid var(--border)', minWidth: 110 }}
+                                >
+                                  <option value="">—</option>
+                                  {MEDICAL_SUBMISSIONS_EVALUATION_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                </select>
+                              </td>
+                              <td>
+                                <select
+                                  value={c.medicalOnboarding || ''}
+                                  onChange={(e) => saveMedicalField(c._id, 'medicalOnboarding', e.target.value)}
+                                  style={{ padding: '2px 6px', fontSize: 11, borderRadius: 4, border: '1px solid var(--border)', minWidth: 110 }}
+                                >
+                                  <option value="">—</option>
+                                  {MEDICAL_ONBOARDING_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                </select>
+                              </td>
+                              <td>
+                                <select
+                                  value={c.medicalSlack || ''}
+                                  onChange={(e) => saveMedicalField(c._id, 'medicalSlack', e.target.value)}
+                                  style={{ padding: '2px 6px', fontSize: 11, borderRadius: 4, border: '1px solid var(--border)', minWidth: 110 }}
+                                >
+                                  <option value="">—</option>
+                                  {MEDICAL_SLACK_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                </select>
+                              </td>
+                              <td>
+                                <select
+                                  value={c.project || ''}
+                                  onChange={(e) => saveMedicalField(c._id, 'project', e.target.value)}
+                                  style={{ padding: '2px 6px', fontSize: 11, borderRadius: 4, border: '1px solid var(--border)', minWidth: 110 }}
+                                >
+                                  <option value="">—</option>
+                                  {projects.map((p) => <option key={p} value={p}>{p}</option>)}
+                                </select>
+                              </td>
+                              <td>
+                                <select
+                                  value={c.projectStatus || ''}
+                                  onChange={(e) => saveMedicalField(c._id, 'projectStatus', e.target.value)}
+                                  style={{ padding: '2px 6px', fontSize: 11, borderRadius: 4, border: '1px solid var(--border)', minWidth: 110 }}
+                                >
+                                  <option value="">—</option>
+                                  {MEDICAL_PROJECT_STATUS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                </select>
+                              </td>
+                            </>
+                          ) : (
                           <>
                             <td>{typeLabel(effectiveEmploymentType(c))}</td>
                             <td>{c.location || '—'}</td>

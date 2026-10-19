@@ -66,6 +66,7 @@ function CandidateProfileModal({ candidate, role, onClose, onSaved }) {
       email: c.email || '',
       phone: c.phone || '',
       location: c.location || '',
+      resumeUrl: c.resumeUrl || '',
       employmentType: effectiveEmploymentType(c) || 'Full-Time',
       yearsOfExperience: c.yearsOfExperience ?? 0,
       ctcCurrent: c.ctcCurrent || 0,
@@ -130,6 +131,20 @@ function CandidateProfileModal({ candidate, role, onClose, onSaved }) {
                 <div className="profile-grid">
                   <Field label="Email">{c.email}</Field>
                   <Field label="Phone">{c.phone}</Field>
+                  <Field label="Resume Link">
+                    {c.resumeUrl ? (
+                      <a
+                        href={c.resumeUrl.startsWith('http') ? c.resumeUrl : `${process.env.REACT_APP_API_URL}${c.resumeUrl}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: 'var(--primary)', textDecoration: 'underline', cursor: 'pointer' }}
+                      >
+                        {c.resumeUrl}
+                      </a>
+                    ) : (
+                      <span style={{ color: 'var(--text-500)' }}>—</span>
+                    )}
+                  </Field>
                   <Field label="Location">{c.location}</Field>
                   <Field label="Source">{c.source}</Field>
                 </div>
@@ -219,12 +234,16 @@ function CandidateProfileModal({ candidate, role, onClose, onSaved }) {
                   <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-500)' }}>Email</label>
                   <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid var(--border)', marginTop: 4 }} />
                 </div>
-                <div>
-                  <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-500)' }}>Phone</label>
-                  <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid var(--border)', marginTop: 4 }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-500)' }}>Location</label>
+<div>
+                      <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-500)' }}>Phone</label>
+                      <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid var(--border)', marginTop: 4 }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-500)' }}>Resume Link</label>
+                      <input value={form.resumeUrl || ''} onChange={(e) => setForm({ ...form, resumeUrl: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid var(--border)', marginTop: 4 }} placeholder="https://..." />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-500)' }}>Location</label>
                   <input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid var(--border)', marginTop: 4 }} />
                 </div>
                 <div>

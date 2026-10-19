@@ -245,11 +245,22 @@ exports.getCandidates = async (req, res) => {
     // Role codes starting with "F" are FREELANCE CODING regardless of what the
     // stored employmentType says — this keeps historical rows correct before
     // they're backfilled by scripts/migrateFreelance.js.
-    const forceFreelance = normalizedRoleCode.startsWith('F');
-    if (forceFreelance || employmentType === 'FREELANCE CODING') {
+    // Role codes starting with "M" are MEDICAL HIRING regardless of what the
+    // stored employmentType says.
+    if (normalizedRoleCode.startsWith('F')) {
       filter.$or = [
         { employmentType: 'FREELANCE CODING' },
         { roleCode: { $regex: '^F', $options: 'i' } }
+      ];
+    } else if (normalizedRoleCode.startsWith('M')) {
+      filter.$or = [
+        { employmentType: 'Medical Hiring' },
+        { roleCode: { $regex: '^M', $options: 'i' } }
+      ];
+    } else if (employmentType === 'Medical Hiring') {
+      filter.$or = [
+        { employmentType: 'Medical Hiring' },
+        { roleCode: { $regex: '^M', $options: 'i' } }
       ];
     } else if (employmentType) {
       filter.employmentType = employmentType;
@@ -335,6 +346,12 @@ const FREELANCE_NULLABLE_FIELDS = [
   'project', 'projectStatus'
 ];
 
+const MEDICAL_NULLABLE_FIELDS = [
+  'resumeAnalyzerStatus', 'medicalAssessments', 'medicalAssessmentsSubmission',
+  'medicalAssessmentsSubmissionNote', 'medicalSubmissionsEvaluation',
+  'medicalOnboarding', 'medicalSlack', 'project', 'projectStatus'
+];
+
 exports.updateCandidate = async (req, res) => {
   try {
     const { changedBy, ...changes } = req.body;
@@ -345,6 +362,10 @@ exports.updateCandidate = async (req, res) => {
     if (changes.roleCode && changes.roleCode.toUpperCase().trim().startsWith('F')) {
       changes.employmentType = 'FREELANCE CODING';
     }
+    // An M-prefixed role code is always Medical Hiring.
+    if (changes.roleCode && changes.roleCode.toUpperCase().trim().startsWith('M')) {
+      changes.employmentType = 'Medical Hiring';
+    }
 
     const newHistoryEntries = buildHistoryEntries(candidate, changes, changedBy);
     for (const [key, value] of Object.entries(changes)) {
@@ -354,7 +375,7 @@ exports.updateCandidate = async (req, res) => {
       if (key === 'cvScreening' && value === '') {
         changes[key] = 'Not Set';
       }
-      if (FREELANCE_NULLABLE_FIELDS.includes(key)) {
+      if (FREELANCE_NULLABLE_FIELDS.includes(key) || MEDICAL_NULLABLE_FIELDS.includes(key)) {
         // '' means "clear it back to unset" from the dropdown's "—" option.
         candidate[key] = value ? value : null;
         continue;

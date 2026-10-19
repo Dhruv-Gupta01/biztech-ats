@@ -253,7 +253,7 @@ function AssessmentOutreach() {
 
   const handleEmpTypeFilterChange = (value) => {
     setEmpTypeFilter(value);
-    if (value !== 'FREELANCE CODING') {
+    if (value !== 'FREELANCE CODING' && value !== 'Contract') {
       setRoleFilter('');
       setFreelanceFilters((prev) => ({ ...prev, roleCode: '' }));
     }
@@ -371,7 +371,6 @@ function AssessmentOutreach() {
                   <option value="Full-Time">Full Time</option>
                   <option value="Contract">Contractual</option>
                   <option value="Part-Time">Part Time</option>
-                  <option value="Internship">Internship</option>
                   <option value="FREELANCE CODING">Freelance Coding</option>
                 </select>
               </div>
