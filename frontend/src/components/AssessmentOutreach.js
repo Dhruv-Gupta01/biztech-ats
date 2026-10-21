@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { emailTemplates } from '../data/dummyData';
 import { fetchCandidates, fetchRoles, sendOutreachEmail, fetchEmailTemplates, fetchProjects, uploadOutreachAttachments, deleteOutreachAttachment, fetchOutreachAttachments } from '../api/api';
 import TemplateManager from './TemplateManager';
 import {
@@ -73,7 +72,7 @@ function AssessmentOutreach() {
   const [empTypeFilter, setEmpTypeFilter] = useState('');
   const [projects, setProjects] = useState(['Terminus', 'Snorkle', 'Alegion']);
   const [freelanceFilters, setFreelanceFilters] = useState(EMPTY_FREELANCE_FILTERS);
-  const [templateId, setTemplateId] = useState(emailTemplates[0].id);
+  const [templateId, setTemplateId] = useState('');
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState(null);
   const [showTemplateManager, setShowTemplateManager] = useState(false);
@@ -100,7 +99,6 @@ function AssessmentOutreach() {
       .then(([candidatesRes, rolesRes]) => {
         setCandidates(candidatesRes.data);
         setRoles(rolesRes.data);
-        if (candidatesRes.data.length > 0) setSelectedIds([candidatesRes.data[0]._id]);
         setLoadError('');
       })
       .catch((err) => { console.error('[AssessmentOutreach] load failed:', err); setLoadError(`Could not load candidates: ${err.message}`); })
@@ -180,10 +178,6 @@ function AssessmentOutreach() {
       .then((res) => {
         if (res.success && res.data.length > 0) {
           setTemplates(res.data);
-          setTemplateId(res.data[0]._id);
-        } else if (res.success && res.data.length === 0) {
-          // If no templates in DB, seed with defaults from dummyData
-          setTemplates(emailTemplates);
         }
       })
       .catch((err) => console.error('[AssessmentOutreach] template fetch failed:', err));

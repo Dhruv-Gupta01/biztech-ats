@@ -43,11 +43,20 @@ exports.createTemplate = async (req, res) => {
     if (!name || !subject || !body) {
       return res.status(400).json({ success: false, message: 'Name, subject, and body are required.' });
     }
+    if (typeof name !== 'string' || name.trim().length === 0) {
+      return res.status(400).json({ success: false, message: 'Name must be a non-empty string.' });
+    }
+    if (typeof subject !== 'string' || subject.trim().length === 0) {
+      return res.status(400).json({ success: false, message: 'Subject must be a non-empty string.' });
+    }
+    if (typeof body !== 'string' || body.trim().length === 0) {
+      return res.status(400).json({ success: false, message: 'Body must be a non-empty string.' });
+    }
     
     const template = new EmailTemplate({
-      name,
-      subject,
-      body,
+      name: name.trim(),
+      subject: subject.trim(),
+      body: body.trim(),
       attachments: Array.isArray(attachments) ? attachments : []
     });
     
@@ -71,10 +80,19 @@ exports.updateTemplate = async (req, res) => {
     if (!name || !subject || !body) {
       return res.status(400).json({ success: false, message: 'Name, subject, and body are required.' });
     }
+    if (typeof name !== 'string' || name.trim().length === 0) {
+      return res.status(400).json({ success: false, message: 'Name must be a non-empty string.' });
+    }
+    if (typeof subject !== 'string' || subject.trim().length === 0) {
+      return res.status(400).json({ success: false, message: 'Subject must be a non-empty string.' });
+    }
+    if (typeof body !== 'string' || body.trim().length === 0) {
+      return res.status(400).json({ success: false, message: 'Body must be a non-empty string.' });
+    }
     
     const template = await EmailTemplate.findByIdAndUpdate(
       req.params.id,
-      { name, subject, body, attachments: Array.isArray(attachments) ? attachments : [] },
+      { name: name.trim(), subject: subject.trim(), body: body.trim(), attachments: Array.isArray(attachments) ? attachments : [] },
       { new: true, runValidators: true }
     );
     

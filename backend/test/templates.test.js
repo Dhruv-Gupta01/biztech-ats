@@ -123,13 +123,24 @@ async function testAuthRequired() {
   const listData = await listRes.json();
   console.log('GET without token:', listData.success ? 'PASS (public)' : 'FAIL');
 
+  // Create a VALID template (not blank) so we don't leave junk in the DB.
   const createRes = await fetch(`${TEST_BASE_URL}/api/email-templates`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: 'No Auth Test ' + Date.now(), subject: 'x', body: 'x' })
+    body: JSON.stringify({
+      name: 'Public Access Test',
+      subject: 'Test {{candidateName}}',
+      body: 'Body for test.'
+    })
   });
   const createData = await createRes.json();
   console.log('POST without token:', createData.success ? 'PASS (public)' : 'FAIL');
+
+  // Clean up the test template immediately so it doesn't linger.
+  if (createData.data?._id) {
+    await fetch(`${TEST_BASE_URL}/api/email-templates/${createData.data._id}`, { method: 'DELETE' });
+    console.log('Cleaned up public access test template.');
+  }
   console.log('');
 }
 
