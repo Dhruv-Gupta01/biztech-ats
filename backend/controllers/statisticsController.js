@@ -10,16 +10,15 @@ exports.getStatistics = async (req, res) => {
       portal, roleCode, owner, status,
       minScore, maxScore,
       minExperience, maxExperience,
-      location, // India/outside
-      rebookFlag // true/false
+      location, employmentType, // Employment type filter
+      statusColumn, statusColumnValue,
+      rebookFlag
+      // TODO: owner filter
     } = req.query;
 
     const filter = {};
 
     // Date range filter based on stage dates
-    // We need to check history for status changes within date range
-    // For simplicity in this implementation, we'll use updatedAt as fallback
-    // A more sophisticated approach would check history array for specific status changes
     if (startDate || endDate) {
       filter.updatedAt = {};
       if (startDate) filter.updatedAt.$gte = new Date(startDate);
@@ -30,14 +29,46 @@ exports.getStatistics = async (req, res) => {
     if (portal) filter.source = portal;
 
     // Role filter
-    if (roleCode) filter.roleCode = roleCode.toUpperCase().trim();
-
-    // Owner filter - we'd need to check history, for now using a simplified approach
-    // In a real implementation, we might want to track owner explicitly
-    // For now, we'll skip this as it requires more complex history querying
+    if (roleCode) {
+      filter.roleCode = roleCode.toUpperCase().trim();
+      // If roleCode starts with F, treat as freelance regardless of employmentType
+      if (roleCode.toUpperCase().trim().startsWith('F')) {
+        filter.$or = [
+          { employmentType: 'FREELANCE CODING' },
+          { roleCode: { $regex: '^F', $options: 'i' } }
+        ];
+      } else if (roleCode.toUpperCase().trim().startsWith('M')) {
+        filter.$or = [
+          { employmentType: 'Medical Hiring' },
+          { roleCode: { $regex: '^M', $options: 'i' } }
+        ];
+      }
+    }
 
     // Status filter
     if (status) filter.status = status;
+
+    // Employment type filter
+    if (employmentType) {
+      filter.employmentType = employmentType;
+    }
+
+    // Status Column + Options filter (like Candidate Pool)
+    if (statusColumn) {
+      if (statusColumn === 'interviewRounds') {
+        if (statusColumnValue) {
+          filter['interviewRounds'] = statusColumnValue;
+        } else {
+          filter['interviewRounds'] = { $exists: true, $ne: null, $ne: {} };
+        }
+      } else {
+        if (statusColumnValue) {
+          filter[statusColumn] = statusColumnValue;
+        } else {
+          filter[statusColumn] = { $exists: true, $ne: null, $ne: '' };
+        }
+      }
+    }
 
     // Resume score range
     if (minScore !== undefined || maxScore !== undefined) {
@@ -55,13 +86,12 @@ exports.getStatistics = async (req, res) => {
 
     // Location filter (India/outside)
     if (location === 'India') {
-      // Simple check - in reality might need more sophisticated location parsing
       filter.location = { $regex: '(?i)(india|delhi|mumbai|bangalore|hyderabad|pune|chennai|kolkata)' };
     } else if (location === 'outside') {
       filter.location = { $not: { $regex: '(?i)(india|delhi|mumbai|bangalore|hyderabad|pune|chennai|kolkata)' } };
     }
 
-    // Re-book flag - would need to be tracked separately, skipping for now
+    if (employmentType) filter.employmentType = employmentType;
     // Would require a field like "rebookCount" or similar
 
     const candidates = await Candidate.find(filter).sort({ updatedAt: -1 });
@@ -94,6 +124,16 @@ exports.getStatistics = async (req, res) => {
     const funnel = STATUS_ORDER.map(status => ({
       label: status,
       count: candidates.filter(c => c.status === status).length
+    }));
+
+    // Funnel analysis by status broken down by employment type
+    const employmentTypes = ['Full-Time', 'Contract', 'Part-Time', 'FREELANCE CODING', 'Medical Hiring'];
+    const funnelByEmploymentType = employmentTypes.map(et => ({
+      employmentType: et,
+      funnel: STATUS_ORDER.map(status => ({
+        status,
+        count: candidates.filter(c => c.employmentType === et && c.status === status).length
+      }))
     }));
 
     // Today's interviews (for 1-hour prior reminder)
@@ -148,24 +188,45 @@ exports.getStatistics = async (req, res) => {
       data: {
         total,
         funnel,
+        funnelByEmploymentType,
         todaysInterviews: [],
         pendingActions,
         portalFunnel,
         candidates: candidates.map(candidate => ({
           id: candidate._id,
           fullName: candidate.fullName,
+          email: candidate.email || '',
           roleCode: candidate.roleCode,
+          employmentType: candidate.employmentType || '',
           location: candidate.location || '',
           lastStatus: candidate.status,
+          status: candidate.status,
           resumeUrl: candidate.resumeUrl,
           score: candidate.score?.suitabilityRating || null,
           experience: candidate.yearsOfExperience,
           source: candidate.source,
-          // Additional fields for detailed view
-          calendlyLinkStatus: candidate.calendlyLinkStatus,
-          onboarding: candidate.onboarding,
-          bootcampStatus: candidate.bootcampStatus,
-          projectStatus: candidate.projectStatus
+          // Freelance / Contract columns
+          screeningInterview: candidate.screeningInterview || '',
+          calendlyLinkSent: candidate.calendlyLinkSent || '',
+          calendlyLinkStatus: candidate.calendlyLinkStatus || '',
+          ndaIca: candidate.ndaIca || '',
+          slackStatus: candidate.slackStatus || '',
+          bootcampAttempts: candidate.bootcampAttempts || '',
+          bootcampStatus: candidate.bootcampStatus || '',
+          onboarding: candidate.onboarding || '',
+          project: candidate.project || '',
+          projectStatus: candidate.projectStatus || '',
+          // Medical Hiring columns
+          resumeAnalyzerStatus: candidate.resumeAnalyzerStatus || '',
+          medicalAssessments: candidate.medicalAssessments || '',
+          medicalAssessmentsSubmission: candidate.medicalAssessmentsSubmission || '',
+          medicalSubmissionsEvaluation: candidate.medicalSubmissionsEvaluation || '',
+          medicalOnboarding: candidate.medicalOnboarding || '',
+          medicalSlack: candidate.medicalSlack || '',
+          // Common columns
+          cvScreening: candidate.cvScreening || '',
+          interviewRounds: candidate.interviewRounds || {},
+          assessmentStatus: candidate.assessmentStatus || ''
         }))
       }
     });
@@ -182,11 +243,11 @@ exports.exportStatisticsCSV = async (req, res) => {
       portal, roleCode, owner, status,
       minScore, maxScore,
       minExperience, maxExperience,
-      location,
+      location, employmentType, // Employment type filter
+      statusColumn, statusColumnValue,
       rebookFlag
     } = req.query;
 
-    // Reuse the same filtering logic as getStatistics
     const filter = {};
 
     if (startDate || endDate) {
@@ -196,7 +257,20 @@ exports.exportStatisticsCSV = async (req, res) => {
     }
 
     if (portal) filter.source = portal;
-    if (roleCode) filter.roleCode = roleCode.toUpperCase().trim();
+    if (roleCode) {
+      filter.roleCode = roleCode.toUpperCase().trim();
+      if (roleCode.toUpperCase().trim().startsWith('F')) {
+        filter.$or = [
+          { employmentType: 'FREELANCE CODING' },
+          { roleCode: { $regex: '^F', $options: 'i' } }
+        ];
+      } else if (roleCode.toUpperCase().trim().startsWith('M')) {
+        filter.$or = [
+          { employmentType: 'Medical Hiring' },
+          { roleCode: { $regex: '^M', $options: 'i' } }
+        ];
+      }
+    }
     if (status) filter.status = status;
 
     if (minScore !== undefined || maxScore !== undefined) {
@@ -217,15 +291,35 @@ exports.exportStatisticsCSV = async (req, res) => {
       filter.location = { $not: { $regex: '(?i)(india|delhi|mumbai|bangalore|hyderabad|pune|chennai|kolkata)' } };
     }
 
+    if (employmentType) {
+      filter.employmentType = employmentType;
+    }
+
+    if (statusColumn) {
+      if (statusColumn === 'interviewRounds') {
+        if (statusColumnValue) {
+          filter['interviewRounds'] = statusColumnValue;
+        } else {
+          filter['interviewRounds'] = { $exists: true, $ne: null, $ne: {} };
+        }
+      } else {
+        if (statusColumnValue) {
+          filter[statusColumn] = statusColumnValue;
+        } else {
+          filter[statusColumn] = { $exists: true, $ne: null, $ne: '' };
+        }
+      }
+    }
+
     const candidates = await Candidate.find(filter).sort({ updatedAt: -1 });
 
     // Generate CSV
     const csvLines = [];
-    csvLines.push('Candidate Name,Role Code,Location,Last Status,Resume Link,Score,Experience,Source,Calendly Status,Onboarding Status,Bootcamp Status,Project Status');
+    csvLines.push('Candidate Name,Role Code,Employment Type,Location,Last Status,Resume Link,Score,Experience,Source,Calendly Status,Onboarding Status,Bootcamp Status,Project Status');
 
     candidates.forEach(candidate => {
       const resumeLink = candidate.resumeUrl ? `https://biztech-ats-backend-0jpt.onrender.com${candidate.resumeUrl}` : '';
-      csvLines.push(`"${candidate.fullName}","${candidate.roleCode}","${candidate.location || ''}","${candidate.status}","${resumeLink}",${candidate.score?.suitabilityRating || ''},${candidate.yearsOfExperience || ''},"${candidate.source || ''}","${candidate.calendlyLinkStatus || ''}","${candidate.onboarding || ''}","${candidate.bootcampStatus || ''}","${candidate.projectStatus || ''}"`);
+      csvLines.push(`"${candidate.fullName}","${candidate.roleCode}","${candidate.employmentType || ''}","${candidate.location || ''}","${candidate.status}","${resumeLink}",${candidate.score?.suitabilityRating || ''},${candidate.yearsOfExperience || ''},"${candidate.source || ''}","${candidate.calendlyLinkStatus || ''}","${candidate.onboarding || ''}","${candidate.bootcampStatus || ''}","${candidate.projectStatus || ''}"`);
     });
 
     const csvContent = csvLines.join('\n');

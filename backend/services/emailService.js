@@ -93,4 +93,4 @@ async function sendOutreachEmails(recipients, rawSubject, rawBody, attachments =
   return results;
 }
 
-module.exports = { sendOutreachEmails };
+module.exports = { sendOutreachEmails, buildAttachmentLinks, fillTemplate };

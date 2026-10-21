@@ -161,7 +161,7 @@ function AssessmentOutreach() {
     }
   };
 
-  const addLinkAttachment = () => setLinkAttachments((prev) => [...prev, { name: '', url: '' }]);
+  const addLinkAttachment = () => setLinkAttachments((prev) => [...prev, { type: 'link', name: '', url: '' }]);
 
   const updateLinkAttachment = (index, field, value) => {
     setLinkAttachments((prev) => prev.map((a, i) => (i === index ? { ...a, [field]: value } : a)));
@@ -293,14 +293,14 @@ function AssessmentOutreach() {
       // for this specific send — template first, so ad-hoc ones are additive.
       const templateLinks = (template.attachments || [])
         .filter((a) => a.type === 'link' && a.url)
-        .map((a) => ({ name: a.name, url: a.url }));
+        .map((a) => ({ type: 'link', name: a.name, url: a.url }));
       const templateFileIds = (template.attachments || [])
         .filter((a) => a.attachmentId)
         .map((a) => a.attachmentId);
 
       const attachments = [
         ...templateLinks,
-        ...linkAttachments.filter((a) => a.url)
+        ...linkAttachments.filter((a) => a.url).map((a) => ({ type: 'link', name: a.name, url: a.url }))
       ];
       // Ad-hoc files come first so their order matches what the recruiter sees.
       const attachmentIds = [...files.map((f) => f._id), ...templateFileIds];

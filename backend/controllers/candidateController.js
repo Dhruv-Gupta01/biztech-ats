@@ -235,7 +235,7 @@ exports.getCandidates = async (req, res) => {
       roleCode, status, minExperience, maxExperience, source, employmentType,
       minSuitability, screeningInterview, calendlyLinkSent, calendlyLinkStatus,
       ndaIca, slackStatus, bootcampAttempts, bootcampStatus, onboarding,
-      project, projectStatus
+      project, projectStatus, options, optionValue
     } = req.query;
     const filter = {};
 
@@ -262,8 +262,11 @@ exports.getCandidates = async (req, res) => {
         { employmentType: 'Medical Hiring' },
         { roleCode: { $regex: '^M', $options: 'i' } }
       ];
-    } else if (employmentType) {
-      filter.employmentType = employmentType;
+    } else if (employmentType === 'FREELANCE CODING' || employmentType === 'Contract') {
+      filter.$or = [
+        { employmentType: { $in: ['FREELANCE CODING', 'Contract'] } },
+        { roleCode: { $regex: '^F', $options: 'i' } }
+      ];
     }
 
     if (status) filter.status = status;
@@ -284,6 +287,13 @@ exports.getCandidates = async (req, res) => {
     if (onboarding) filter.onboarding = onboarding;
     if (project) filter.project = project;
     if (projectStatus) filter.projectStatus = projectStatus;
+    if (options) {
+      if (optionValue && optionValue !== '') {
+        filter[options] = optionValue;
+      } else {
+        filter[options] = { $exists: true, $ne: null, $ne: '' };
+      }
+    }
     const candidates = await Candidate.find(filter).sort({ createdAt: -1 });
     return res.status(200).json({ success: true, count: candidates.length, data: candidates });
   } catch (err) {

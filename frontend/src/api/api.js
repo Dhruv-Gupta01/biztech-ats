@@ -45,8 +45,17 @@ export async function bulkImportWithRole(formData) {
 }
 
 export async function fetchCandidates(filters = {}) {
+  const mapped = { ...filters };
+  if (mapped.column) {
+    mapped.options = mapped.column;
+    delete mapped.column;
+  }
+  if (mapped.columnValue) {
+    mapped.optionValue = mapped.columnValue;
+    delete mapped.columnValue;
+  }
   const params = new URLSearchParams(
-    Object.fromEntries(Object.entries(filters).filter(([, v]) => v))
+    Object.fromEntries(Object.entries(mapped).filter(([, v]) => v))
   ).toString();
   return request(`${BASE_URL}/candidates?${params}`);
 }

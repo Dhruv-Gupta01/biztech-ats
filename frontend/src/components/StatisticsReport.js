@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Bar, Pie, Line } from 'react-chartjs-2';
 import { Chart, registerables } from 'chart.js';
-import { fetchStatistics } from '../api/api';
+import { fetchStatistics, exportStatisticsCSV } from '../api/api';
+import { getColumnsForType, getOptionsForColumn } from '../utils/columnOptions';
+import { fetchRoles } from '../api/api';
 
 Chart.register(...registerables);
 
@@ -23,18 +25,38 @@ const STATUS_COLORS = {
   'Not Appeared': 'var(--red)',
   'Rescheduled': 'var(--amber)',
   'Refered for other position': '#7C3AED',
-  'Not interested': 'var(--red)'
+  'Not interested': 'var(--red)',
+  // Freelance / Contract columns
+  'Screening Interview': '#3B82F6',
+  'Calendly Link Sent': '#10B981',
+  'Calendly Link Status': '#F59E0B',
+  'NDA & ICA': '#8B5CF6',
+  'Slack': '#06B6D4',
+  'Bootcamp Attempts': '#EF4444',
+  'Bootcamp Status': '#F87171',
+  'Onboarding': '#0891B2',
+  'Project': '#84CC16',
+  'Project Status': '#65D1F7',
+  // Common columns
+  'Status': '#6B7280',
+  'CV Screening': '#8B5CF6',
+  'Interview Round': '#059669',
+  'Assessment Status': '#D946EF'
 };
 
 function StatisticsReport() {
   const [statistics, setStatistics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [exporting, setExporting] = useState(false);
+  const [roleCodes, setRoleCodes] = useState([]);
   const [filters, setFilters] = useState({
     startDate: '',
     endDate: '',
     roleCode: '',
-    status: '',
+    employmentType: '',
+    statusColumn: '',
+    statusColumnValue: '',
     portal: '',
     minScore: '',
     maxScore: '',
@@ -42,6 +64,14 @@ function StatisticsReport() {
     maxExperience: '',
     location: ''
   });
+
+  useEffect(() => {
+    fetchRoles()
+      .then((res) => {
+        setRoleCodes(res.data.map((r) => r.code).sort());
+      })
+      .catch((err) => console.error('[StatisticsReport] fetchRoles failed:', err));
+  }, []);
 
   const loadStatistics = () => {
     setLoading(true);
@@ -51,7 +81,9 @@ function StatisticsReport() {
     if (filters.startDate) params.startDate = filters.startDate;
     if (filters.endDate) params.endDate = filters.endDate;
     if (filters.roleCode) params.roleCode = filters.roleCode;
-    if (filters.status) params.status = filters.status;
+    if (filters.employmentType) params.employmentType = filters.employmentType;
+    if (filters.statusColumn) params.statusColumn = filters.statusColumn;
+    if (filters.statusColumnValue) params.statusColumnValue = filters.statusColumnValue;
     if (filters.portal) params.portal = filters.portal;
     if (filters.minScore) params.minScore = filters.minScore;
     if (filters.maxScore) params.maxScore = filters.maxScore;
@@ -65,9 +97,79 @@ function StatisticsReport() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => {
-    loadStatistics();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const handleExportCSV = async () => {
+    setExporting(true);
+    try {
+      const response = await exportStatisticsCSV(filters);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `statistics_report_${new Date().toISOString().slice(0,10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('Could not export CSV: ' + err.message);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const dynamicFunnel = useMemo(() => {
+    const { candidates } = statistics || {};
+    if (!candidates) return null;
+    
+    const columns = getColumnsForType(filters.employmentType);
+    const counts = columns.map((col) => {
+      if (col.field === 'interviewRounds') {
+        const withRounds = candidates.filter((c) => {
+          const vals = Object.values(c.interviewRounds || {}).filter(v => v && v !== 'Not set');
+          return vals.length > 0;
+        });
+        return { label: col.label, count: withRounds.length };
+      }
+      const count = candidates.filter((c) => c[col.field]).length;
+      return { label: col.label, count };
+    }).filter((item) => item.count > 0);
+    
+    if (counts.length === 0) return null;
+    
+    return {
+      labels: counts.map((c) => c.label),
+      datasets: [{
+        data: counts.map((c) => c.count),
+        backgroundColor: counts.map((c) => STATUS_COLORS[c.label] || '#6B7280'),
+        borderWidth: 0
+      }]
+    };
+  }, [statistics, filters.employmentType]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Per-employment-type funnel, each using its own column set (same as All Status filter)
+  const employmentTypeFunnels = useMemo(() => {
+    const { candidates } = statistics || {};
+    if (!candidates) return [];
+    const employmentTypes = ['Full-Time', 'Contract', 'Part-Time', 'FREELANCE CODING', 'Medical Hiring'];
+    return employmentTypes.map((et) => {
+      const etCandidates = candidates.filter((c) => c.employmentType === et);
+      const columns = getColumnsForType(et);
+      const counts = columns.map((col) => {
+        if (col.field === 'interviewRounds') {
+          const withRounds = etCandidates.filter((c) => {
+            const vals = Object.values(c.interviewRounds || {}).filter(v => v && v !== 'Not set');
+            return vals.length > 0;
+          });
+          return { label: col.label, count: withRounds.length };
+        }
+        return { label: col.label, count: etCandidates.filter((c) => c[col.field]).length };
+      }).filter((item) => item.count > 0);
+      return {
+        employmentType: et,
+        labels: counts.map((c) => c.label),
+        data: counts.map((c) => c.count),
+        colors: counts.map((c) => STATUS_COLORS[c.label] || '#6B7280')
+      };
+    }).filter((et) => et.labels.length > 0);
+  }, [statistics]);
 
   useEffect(() => { loadStatistics(); }, [filters]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -189,20 +291,36 @@ function StatisticsReport() {
         <div className="filters-row">
           <input type="date" value={filters.startDate} onChange={(e) => setFilters({ ...filters, startDate: e.target.value })} />
           <input type="date" value={filters.endDate} onChange={(e) => setFilters({ ...filters, endDate: e.target.value })} />
+          <select value={filters.employmentType} onChange={(e) => setFilters({ ...filters, employmentType: e.target.value, roleCode: '', statusColumn: '', statusColumnValue: '' })}>
+            <option value="">All Employment Types</option>
+            <option value="Full-Time">Full Time</option>
+            <option value="Contract">Contractual</option>
+            <option value="Part-Time">Part Time</option>
+            <option value="FREELANCE CODING">Freelance Coding</option>
+            <option value="Medical Hiring">Medical Hiring</option>
+          </select>
           <select value={filters.roleCode} onChange={(e) => setFilters({ ...filters, roleCode: e.target.value })}>
             <option value="">All Role Codes</option>
-            <option value="BTA-ENG-01">BTA-ENG-01</option>
-            <option value="BTA-DS-01">BTA-DS-01</option>
-            <option value="F-TYPESCRIPT">F-TYPESCRIPT</option>
+            {roleCodes.filter((code) => {
+              if (filters.employmentType === 'FREELANCE CODING' || filters.employmentType === 'Contract') return code.toUpperCase().startsWith('F');
+              if (filters.employmentType === 'Medical Hiring') return code.toUpperCase().startsWith('M');
+              return true;
+            }).map((code) => <option key={code} value={code}>{code}</option>)}
           </select>
-          <select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}>
-            <option value="">All Statuses</option>
-            <option value="Interview 1">Interview 1</option>
-            <option value="Interview 1 Shortlisted">Interview 1 Shortlisted</option>
-            <option value="Assessment 1 Passed">Assessment 1 Passed</option>
-            <option value="Selected">Selected</option>
-            <option value="Rejected">Rejected</option>
+          <select value={filters.statusColumn} onChange={(e) => setFilters({ ...filters, statusColumn: e.target.value, statusColumnValue: '' })}>
+            <option value="">All Status</option>
+            {getColumnsForType(filters.employmentType).map((col) => (
+              <option key={col.field} value={col.field}>{col.label}</option>
+            ))}
           </select>
+          {filters.statusColumn && (
+            <select value={filters.statusColumnValue} onChange={(e) => setFilters({ ...filters, statusColumnValue: e.target.value })}>
+              <option value="">Options</option>
+              {getOptionsForColumn(filters.statusColumn, []).map((opt) => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </select>
+          )}
           <select value={filters.portal} onChange={(e) => setFilters({ ...filters, portal: e.target.value })}>
             <option value="">All Portals</option>
             <option value="Naukri">Naukri</option>
@@ -216,10 +334,13 @@ function StatisticsReport() {
             <option value="outside">Outside India</option>
           </select>
           <button className="btn-secondary" onClick={() => setFilters({
-            startDate: '', endDate: '', roleCode: '', status: '',
-            portal: '', location: ''
+            startDate: '', endDate: '', roleCode: '', employmentType: '', statusColumn: '', statusColumnValue: '',
+            portal: '', location: '', minScore: '', maxScore: '', minExperience: '', maxExperience: ''
           })}>Clear</button>
           <button className="btn-secondary" onClick={loadStatistics}>Apply</button>
+          <button className="btn-primary" onClick={handleExportCSV} disabled={exporting}>
+            {exporting ? 'Exporting...' : '⬇ Export CSV'}
+          </button>
         </div>
       </div>
 
@@ -227,10 +348,17 @@ function StatisticsReport() {
       <div className="charts-grid">
         <div className="chart-card">
           <h3>Pipeline Funnel</h3>
-          <Pie data={funnelData} options={{
-            responsive: true,
-            plugins: { legend: { position: 'right' } }
-          }} />
+          {dynamicFunnel ? (
+            <Pie data={dynamicFunnel} options={{
+              responsive: true,
+              plugins: { legend: { position: 'right' } }
+            }} />
+          ) : (
+            <Pie data={funnelData} options={{
+              responsive: true,
+              plugins: { legend: { position: 'right' } }
+            }} />
+          )}
         </div>
         <div className="chart-card">
           <h3>Portal Distribution</h3>
@@ -280,6 +408,84 @@ function StatisticsReport() {
           </div>
         </div>
       </div>
+
+      {/* Employment Type Funnel Breakdown */}
+      {employmentTypeFunnels.length > 0 && (
+        <div className="card">
+          <h2>Pipeline Funnel by Employment Type</h2>
+          <div className="charts-grid">
+            {employmentTypeFunnels.map((et) => (
+              <div key={et.employmentType} className="chart-card">
+                <h4>{et.employmentType}</h4>
+                <Pie data={{
+                  labels: et.labels,
+                  datasets: [{
+                    data: et.data,
+                    backgroundColor: et.colors,
+                    borderWidth: 0
+                  }]
+                }} options={{
+                  responsive: true,
+                  plugins: { legend: { position: 'right' } }
+                }} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Candidate List */}
+      {candidates && candidates.length > 0 && (
+        <div className="card">
+          <h2>Candidate List ({candidates.length})</h2>
+          <div style={{ overflowX: 'auto' }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Role Code</th>
+                  <th>Employment Type</th>
+                  <th>Location</th>
+                  <th>Last Status</th>
+                  <th>Resume</th>
+                  <th>Score</th>
+                  <th>Experience</th>
+                  <th>Source</th>
+                  <th>Calendly Status</th>
+                  <th>Onboarding</th>
+                  <th>Bootcamp</th>
+                  <th>Project</th>
+                </tr>
+              </thead>
+              <tbody>
+                {candidates.map((c) => (
+                  <tr key={c.id}>
+                    <td>{c.fullName}</td>
+                    <td>{c.email || ''}</td>
+                    <td>{c.roleCode || ''}</td>
+                    <td>{c.employmentType || ''}</td>
+                    <td>{c.location || ''}</td>
+                    <td>{c.lastStatus || c.status || ''}</td>
+                    <td>
+                      {c.resumeUrl && (
+                        <a href={`https://biztech-ats-backend-0jpt.onrender.com${c.resumeUrl}`} target="_blank" rel="noopener noreferrer">View</a>
+                      )}
+                    </td>
+                    <td>{c.score ?? ''}</td>
+                    <td>{c.experience || ''}</td>
+                    <td>{c.source || ''}</td>
+                    <td>{c.calendlyLinkStatus || ''}</td>
+                    <td>{c.onboarding || ''}</td>
+                    <td>{c.bootcampStatus || ''}</td>
+                    <td>{c.projectStatus || ''}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Reporting Summary */}
       <div className="card">

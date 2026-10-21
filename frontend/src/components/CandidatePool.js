@@ -9,6 +9,7 @@ import {
   checkCalendlyStatus
 } from '../api/api';
 import { isFreelanceRoleCode, isFreelanceFilter, effectiveEmploymentType } from '../utils/employment';
+import { getColumnsForType, getOptionsForColumn } from '../utils/columnOptions';
 
 const typeLabel = (t) => (t === 'Contract' ? 'Contractual' : t === 'Part-Time' ? 'Part Time' : t === 'FREELANCE CODING' ? 'Freelance Coding' : t === 'Medical Hiring' ? 'Medical Hiring' : 'Full Time');
 const money = (n) => (n ? `₹${(n / 100000).toFixed(1)}L` : '—');
@@ -31,27 +32,6 @@ const MEDICAL_SUBMISSIONS_EVALUATION_OPTIONS = ['Pass', 'Fail', 'Pending'];
 const MEDICAL_ONBOARDING_OPTIONS = ['Sent', 'Not sent', 'Done', 'Not done', 'Not interested'];
 const MEDICAL_SLACK_OPTIONS = ['Joined', 'Not joined', 'Not interested'];
 const MEDICAL_PROJECT_STATUS_OPTIONS = ['Active', 'Not Active', 'On hold', 'In pipeline'];
-
-const STATUS_OPTIONS = [
-  'Information Form Response',
-  'Interview 1',
-  'Interview 1 Shortlisted',
-  'Interview 2',
-  'Interview 2 Shortlisted',
-  'Assessment 1',
-  'Assessment 1 Shortlisted',
-  'Assessment 1 Passed',
-  'Assessment 2',
-  'Assessment 2 Shortlisted',
-  'Assessment 2 Passed',
-  'Final Round Shortlisted',
-  'Selected',
-  'Rejected',
-  'Not Appeared',
-  'Rescheduled',
-  'Refered for other position',
-  'Not interested'
-];
 
 const ASSESSMENT_STATUSES = ['Not Set', 'Selected', 'Rejected', 'Not Appeared', 'Rescheduled', 'Not interested', 'Refered for other position'];
 const INTERVIEW_OPTIONS = ['Not set', 'Selected', 'Rejected', 'Not Appeared', 'Rescheduled', 'Not interested', 'Refered for other position'];
@@ -102,7 +82,7 @@ function CandidatePool() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
-  const [filters, setFilters] = useState({ roleCode: '', employmentType: '', status: '', minExperience: '', maxExperience: '', source: '' });
+  const [filters, setFilters] = useState({ employmentType: '', roleCode: '', statusColumn: '', statusColumnValue: '', minExperience: '', maxExperience: '', source: '' });
   const [query, setQuery] = useState('');
 
   const [analyzerScores, setAnalyzerScores] = useState({});
@@ -466,6 +446,20 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
       if (filters.employmentType && filters.employmentType !== 'FREELANCE CODING' && filters.employmentType !== 'Contract' && effectiveEmploymentType(c) !== filters.employmentType) return false;
       // An M-prefixed role code always satisfies MEDICAL HIRING filter.
       if (filters.employmentType === 'Medical Hiring' && !c.roleCode.toUpperCase().startsWith('M') && c.employmentType !== 'Medical Hiring') return false;
+      if (filters.statusColumn) {
+        // Filter candidates who have a non-empty value in the selected column
+        const field = filters.statusColumn;
+        let candidateValue;
+        if (field === 'status') {
+          candidateValue = c.status;
+        } else if (field === 'interviewRounds') {
+          candidateValue = Object.values(c.interviewRounds || {}).find(v => v && v !== 'Not set');
+        } else {
+          candidateValue = c[field];
+        }
+        if (!candidateValue) return false;
+        if (filters.statusColumnValue && filters.statusColumnValue !== '' && candidateValue !== filters.statusColumnValue) return false;
+      }
       if (query) {
         const q = query.toLowerCase();
         const haystack = [
@@ -479,7 +473,7 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
       }
       return true;
     });
-  }, [candidates, filters.employmentType, query]);
+  }, [candidates, filters.employmentType, filters.statusColumn, filters.statusColumnValue, query]);
 
   const exportCSV = () => {
     const blob = new Blob([toCSV(filtered, freelanceMode || medicalMode)], { type: 'text/csv' });
@@ -693,11 +687,7 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
       {analyzing && <div className="alert">⏳ Resume Analyzer is running... Please wait while we analyze the selected candidates.</div>}
 
       <div className="filters-row">
-        <select value={filters.roleCode} onChange={(e) => setFilters({ ...filters, roleCode: e.target.value })}>
-          <option value="">All role codes</option>
-          {roleCodes.map((code) => <option key={code} value={code}>{code}</option>)}
-        </select>
-        <select value={filters.employmentType} onChange={(e) => setFilters({ ...filters, employmentType: e.target.value })}>
+        <select value={filters.employmentType} onChange={(e) => setFilters({ ...filters, employmentType: e.target.value, roleCode: '', statusColumn: '', statusColumnValue: '' })}>
           <option value="">All employment types</option>
           <option value="Full-Time">Full Time</option>
           <option value="Contract">Contractual</option>
@@ -705,10 +695,27 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
           <option value="FREELANCE CODING">Freelance Coding</option>
           <option value="Medical Hiring">Medical Hiring</option>
         </select>
-        <select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}>
-          <option value="">All statuses</option>
-          {STATUS_OPTIONS.map((s) => <option key={s}>{s}</option>)}
+        <select value={filters.roleCode} onChange={(e) => setFilters({ ...filters, roleCode: e.target.value })}>
+          <option value="">All role codes</option>
+          {roleCodes.filter((code) => {
+            if (filters.employmentType === 'FREELANCE CODING' || filters.employmentType === 'Contract') return code.toUpperCase().startsWith('F');
+            if (filters.employmentType === 'Medical Hiring') return code.toUpperCase().startsWith('M');
+            return true;
+          }).map((code) => <option key={code} value={code}>{code}</option>)}</select>
+        <select value={filters.statusColumn} onChange={(e) => setFilters({ ...filters, statusColumn: e.target.value, statusColumnValue: '' })}>
+          <option value="">All Status</option>
+          {getColumnsForType(filters.employmentType).map((col) => (
+            <option key={col.field} value={col.field}>{col.label}</option>
+          ))}
         </select>
+        {filters.statusColumn && (
+          <select value={filters.statusColumnValue} onChange={(e) => setFilters({ ...filters, statusColumnValue: e.target.value })}>
+            <option value="">Options</option>
+            {getOptionsForColumn(filters.statusColumn, candidates).map((opt) => (
+              <option key={opt} value={opt}>{opt}</option>
+            ))}
+          </select>
+        )}
         <select value={filters.source} onChange={(e) => setFilters({ ...filters, source: e.target.value })}>
           <option value="">All sources</option>
           {allSources.map((s) => <option key={s} value={s}>{s}</option>)}

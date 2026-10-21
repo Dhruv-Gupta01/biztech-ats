@@ -152,7 +152,7 @@ function TemplateManager({ templates, setTemplates, onTemplateSelect, onClose })
   const addAttachment = () => {
     setForm((prev) => ({
       ...prev,
-      attachments: [...prev.attachments, { name: '', url: '' }]
+      attachments: [...prev.attachments, { type: 'link', name: '', url: '' }]
     }));
   };
 
