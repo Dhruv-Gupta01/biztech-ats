@@ -4,6 +4,7 @@ import CandidateProfileModal from './CandidateProfileModal';
 import { fetchCandidates, fetchEmailTemplates, fetchRoles, sendOutreachEmail } from '../api/api';
 import TemplateManager from './TemplateManager';
 import { typeLabel, effectiveEmploymentType } from '../utils/employment';
+import { getColumnsForType } from '../utils/columnOptions';
 
 function fillTemplate(str, vars) {
   return str.replace(/{{(.*?)}}/g, (_, key) => vars[key.trim()] ?? `{{${key.trim()}}}`);
@@ -18,6 +19,7 @@ function SkillSearch() {
   const [filters, setFilters] = useState({
     roleCode: '',
     employmentType: '',
+    statusColumn: '',
     experience: '',
     scoreMin: ''
   });
@@ -92,6 +94,22 @@ function SkillSearch() {
       const matchesScore = filters.scoreMin
         ? (c.score?.suitabilityRating || 0) >= Number(filters.scoreMin)
         : true;
+
+      // "All Status" column filter — same semantics as CandidatePool:
+      // a specific value must match exactly; a blank column value means
+      // "has any value for that column".
+      if (filters.statusColumn) {
+        const field = filters.statusColumn;
+        let candidateValue;
+        if (field === 'status') {
+          candidateValue = c.status;
+        } else if (field === 'interviewRounds') {
+          candidateValue = Object.values(c.interviewRounds || {}).find(v => v && v !== 'Not set');
+        } else {
+          candidateValue = c[field];
+        }
+        if (!candidateValue) return false;
+      }
 
       return matchesSkills && matchesRoleCode && matchesEmploymentType && matchesExperience && matchesScore;
     });
@@ -177,6 +195,7 @@ function SkillSearch() {
     setFilters({
       roleCode: '',
       employmentType: '',
+      statusColumn: '',
       experience: '',
       scoreMin: ''
     });
@@ -217,19 +236,30 @@ function SkillSearch() {
           onChange={(e) => setSkillQuery(e.target.value)}
           style={{ minWidth: 320 }}
         />
-        <select value={filters.roleCode} onChange={(e) => setFilters({ ...filters, roleCode: e.target.value })}>
-          <option value="">All role codes</option>
-          {[...new Set(candidates.map(c => c.roleCode).filter(Boolean))].sort().map((code) => (
-            <option key={code} value={code}>{code}</option>
-          ))}
-        </select>
-        <select value={filters.employmentType} onChange={(e) => setFilters({ ...filters, employmentType: e.target.value })}>
+        <select value={filters.employmentType} onChange={(e) => setFilters({ ...filters, employmentType: e.target.value, roleCode: '', statusColumn: '' })}>
           <option value="">All employment types</option>
           <option value="Full-Time">Full Time</option>
           <option value="Part-Time">Part Time</option>
           <option value="Contract">Contractual</option>
           <option value="FREELANCE CODING">Freelance Coding</option>
           <option value="Medical Hiring">Medical Hiring</option>
+        </select>
+        <select value={filters.roleCode} onChange={(e) => setFilters({ ...filters, roleCode: e.target.value, statusColumn: '' })}>
+          <option value="">All role codes</option>
+          {[...new Set(candidates.map(c => c.roleCode).filter(Boolean))].sort()
+            .filter((code) => {
+              const codeUpper = code.toUpperCase();
+              if (filters.employmentType === 'FREELANCE CODING' || filters.employmentType === 'Contract') return codeUpper.startsWith('F');
+              if (filters.employmentType === 'Medical Hiring') return codeUpper.startsWith('M');
+              return true;
+            })
+            .map((code) => <option key={code} value={code}>{code}</option>)}
+        </select>
+        <select value={filters.statusColumn} onChange={(e) => setFilters({ ...filters, statusColumn: e.target.value })}>
+          <option value="">All Status</option>
+          {getColumnsForType(filters.employmentType).map((col) => (
+            <option key={col.field} value={col.field}>{col.label}</option>
+          ))}
         </select>
         <input type="number" min="0" placeholder="Min experience (yrs)" value={filters.experience} onChange={(e) => setFilters({ ...filters, experience: e.target.value })} style={{ width: 130 }} />
         <input type="number" min="0" max="10" placeholder="Min score" value={filters.scoreMin} onChange={(e) => setFilters({ ...filters, scoreMin: e.target.value })} style={{ width: 110 }} />

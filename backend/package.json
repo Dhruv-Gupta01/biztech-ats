@@ -11,9 +11,10 @@
     "db:reset": "node scripts/resetData.js",
     "migrate:freelance": "node scripts/migrateFreelance.js",
     "calendly:whoami": "node scripts/calendlyWhoami.js",
-    "test": "jest",
+    "test": "jest --testPathIgnorePatterns=atsecomprehensive",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "test:integration": "node test/ats-integration.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
