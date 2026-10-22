@@ -346,3 +346,32 @@ export async function exportStatisticsCSV(params = {}) {
   ).toString();
   return fetch(`${BASE_URL}/statistics/export/csv?${qs}`);
 }
+
+// --- Employment Types (Dynamic Registry) ---
+export async function fetchEmploymentTypes() {
+  return request(`${BASE_URL}/employment-types`);
+}
+
+export async function createEmploymentType(data) {
+  return request(`${BASE_URL}/employment-types`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+}
+
+export async function updateEmploymentType(name, data) {
+  return request(`${BASE_URL}/employment-types/${encodeURIComponent(name)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+}
+
+export async function deleteEmploymentType(name) {
+  return request(`${BASE_URL}/employment-types/${encodeURIComponent(name)}`, { method: 'DELETE' });
+}
+
+export async function deactivateEmploymentType(name) {
+  return request(`${BASE_URL}/employment-types/${encodeURIComponent(name)}/deactivate`, { method: 'PATCH' });
+}

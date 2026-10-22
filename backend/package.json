@@ -7,6 +7,7 @@
     "dev": "nodemon server.js",
     "seed:recruiter": "node seed/seedRecruiter.js",
     "seed:email-templates": "node seed/seedEmailTemplates.js",
+    "seed:employment-types": "node scripts/seedEmploymentTypes.js",
     "seed:candidates": "node scripts/seedCandidates.js",
     "db:reset": "node scripts/resetData.js",
     "migrate:freelance": "node scripts/migrateFreelance.js",

@@ -1,5 +1,6 @@
 const Candidate = require('../models/Candidate');
 const Role = require('../models/Role');
+const registry = require('../utils/employmentRegistry');
 
 exports.getStatistics = async (req, res) => {
   try {
@@ -127,7 +128,7 @@ exports.getStatistics = async (req, res) => {
     }));
 
     // Funnel analysis by status broken down by employment type
-    const employmentTypes = ['Full-Time', 'Contract', 'Part-Time', 'FREELANCE CODING', 'Medical Hiring'];
+    const employmentTypes = registry.getActiveNames();
     const funnelByEmploymentType = employmentTypes.map(et => ({
       employmentType: et,
       funnel: STATUS_ORDER.map(status => ({

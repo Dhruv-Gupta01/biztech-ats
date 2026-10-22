@@ -1,8 +1,7 @@
 const { parse } = require('csv-parse/sync');
 const Candidate = require('../models/Candidate');
 const Role = require('../models/Role');
-
-const VALID_EMP_TYPES = ['Full-Time', 'Part-Time', 'Contract', 'Internship', 'FREELANCE CODING'];
+const registry = require('../utils/employmentRegistry');
 const VALID_STATUSES = [
   'Information Form Response',
   'Interview 1',
@@ -146,9 +145,9 @@ exports.bulkImportCandidates = async (req, res) => {
         continue;
       }
 
-      const employmentType = roleCode.startsWith('F')
-        ? 'FREELANCE CODING'
-        : (VALID_EMP_TYPES.includes(row.employmentType) ? row.employmentType : 'Full-Time');
+      const employmentType = registry.resolveByPrefix(roleCode)
+        ? registry.resolveByPrefix(roleCode)
+        : (registry.isValidName(row.employmentType) ? row.employmentType : registry.getDefaultName());
       const status = VALID_STATUSES.includes(row.status) ? row.status : 'Information Form Response';
       const skills = row.skills ? row.skills.split(';').map((s) => s.trim()).filter(Boolean) : [];
 
@@ -245,9 +244,9 @@ exports.bulkImportWithRole = async (req, res) => {
         continue;
       }
 
-      const employmentType = roleCode.toUpperCase().trim().startsWith('F')
-        ? 'FREELANCE CODING'
-        : (VALID_EMP_TYPES.includes(row.employmentType) ? row.employmentType : 'Full-Time');
+      const employmentType = registry.resolveByPrefix(roleCode.toUpperCase().trim())
+        ? registry.resolveByPrefix(roleCode.toUpperCase().trim())
+        : (registry.isValidName(row.employmentType) ? row.employmentType : registry.getDefaultName());
       const status = VALID_STATUSES.includes(row.status) ? row.status : 'Information Form Response';
       const skills = row.skills ? row.skills.split(';').map((s) => s.trim()).filter(Boolean) : [];
 

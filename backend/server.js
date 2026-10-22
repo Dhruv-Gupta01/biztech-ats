@@ -15,12 +15,24 @@ const etlRoutes = require('./routes/etlRoutes');
 const formSyncRoutes = require('./routes/formSyncRoutes');
 const projectRoutes = require('./routes/projectRoutes');
 const statisticsRoutes = require('./routes/statisticsRoutes');
+const employmentTypeRoutes = require('./routes/employmentTypeRoutes');
+const employmentTypeRegistry = require('./utils/employmentRegistry');
 const { runRetentionCleanup } = require('./services/retentionService');
 const { runNaukriEtl } = require('./services/naukriEtlService');
 
 const app = express();
 
 connectDB();
+
+// Boot the employment-type registry: seeds the starter set on a fresh DB and
+// refreshes the in-memory cache used by model hooks / per-row imports.
+employmentTypeRegistry.ensureDefaultEmploymentTypes().then(() => {
+  return employmentTypeRegistry.refreshEmploymentTypes();
+}).then(() => {
+  console.log('[EmploymentTypes] Registry ready.');
+}).catch((err) => {
+  console.error('[EmploymentTypes] Registry init failed:', err);
+});
 
 app.use(cors());
 app.use(express.json());
@@ -38,6 +50,7 @@ app.use('/api/etl', etlRoutes);
 app.use('/api/form-sync', formSyncRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/statistics', statisticsRoutes);
+app.use('/api/employment-types', employmentTypeRoutes);
 
 app.get('/', (req, res) => res.send('BizTech ATS API is running'));
 // Daily retention sweep at 2 AM server time. Safe to leave running even when

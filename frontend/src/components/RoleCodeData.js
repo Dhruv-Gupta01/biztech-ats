@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { fetchCandidates, fetchRoles, updateCandidate } from '../api/api';
 import CandidateProfileModal from './CandidateProfileModal';
 import { effectiveEmploymentType, isFreelanceCandidate } from '../utils/employment';
+import { useEmploymentTypes } from '../contexts/EmploymentTypesContext';
 
 const STATUS_OPTIONS = [
   'Information Form Response',
@@ -24,8 +25,6 @@ const STATUS_OPTIONS = [
   'Not interested'
 ];
 
-const EMP_TYPE_OPTIONS = ['Full-Time', 'Part-Time', 'Contract', 'Internship', 'FREELANCE CODING'];
-
 function RoleCodeData() {
   const [roles, setRoles] = useState([]);
   const [allCandidates, setAllCandidates] = useState([]);
@@ -34,6 +33,8 @@ function RoleCodeData() {
   const [savingNotesId, setSavingNotesId] = useState(null);
   const [profileCandidate, setProfileCandidate] = useState(null);
   const [notesDraft, setNotesDraft] = useState({});
+
+  const { employmentTypes } = useEmploymentTypes();
 
   const [filters, setFilters] = useState({ employmentType: '', status: '', source: '', query: '' });
 
@@ -78,6 +79,11 @@ function RoleCodeData() {
   }, [allCandidates, selectedRoleCode, filters]);
 
   const role = useMemo(() => roles.find((r) => r.code === selectedRoleCode), [roles, selectedRoleCode]);
+
+  const activeEmpTypes = useMemo(
+    () => employmentTypes.filter((et) => et.isActive).sort((a, b) => a.sortOrder - b.sortOrder),
+    [employmentTypes]
+  );
 
   const sources = useMemo(() => {
     const set = new Set(allCandidates.map((c) => c.source).filter(Boolean));
@@ -129,7 +135,7 @@ function RoleCodeData() {
           <div className="filters-row" style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', background: 'rgba(0,0,0,0.01)' }}>
             <select value={filters.employmentType} onChange={(e) => setFilters({ ...filters, employmentType: e.target.value })}>
               <option value="">All employment types</option>
-              {EMP_TYPE_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+            {activeEmpTypes.map((et) => <option key={et.name} value={et.name}>{et.label || et.name}</option>)}
             </select>
             <select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}>
               <option value="">All statuses</option>

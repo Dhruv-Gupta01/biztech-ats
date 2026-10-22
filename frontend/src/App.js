@@ -1,5 +1,6 @@
 import React from 'react';
 import { AuthProvider, useAuth } from './auth/AuthContext';
+import { EmploymentTypesProvider } from './contexts/EmploymentTypesContext';
 import AuthPage from './components/AuthPage';
 import CandidateDashboard from './components/CandidateDashboard';
 import RecruiterApp from './components/RecruiterApp';
@@ -23,7 +24,9 @@ function Gate() {
 function App() {
   return (
     <AuthProvider>
-      <Gate />
+      <EmploymentTypesProvider>
+        <Gate />
+      </EmploymentTypesProvider>
     </AuthProvider>
   );
 }

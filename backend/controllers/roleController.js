@@ -1,6 +1,7 @@
 const Role = require('../models/Role');
 const { postJobToLinkedIn } = require('../services/linkedinService');
 const { postJobToNaukri } = require('../services/naukriService');
+const registry = require('../utils/employmentRegistry');
 
 // GET /api/roles
 exports.getRoles = async (req, res) => {
@@ -31,9 +32,13 @@ exports.createRole = async (req, res) => {
 
     const skillsArray = Array.isArray(skills) ? skills : skills ? String(skills).split(',').map((s) => s.trim()).filter(Boolean) : [];
 
-    // Role codes starting with "F" are always freelance coding roles.
     const normalizedCode = code.toUpperCase().trim();
-    const resolvedEmpType = normalizedCode.startsWith('F') ? 'FREELANCE CODING' : empType;
+    // Role-code prefix wins: a code starting with the prefix of a prefix-based
+    // employment type (e.g. F → Freelance Coding) is always that type. Otherwise
+    // honour the recruiter's explicit choice when it is a registered type.
+    const prefixType = registry.resolveByPrefix(normalizedCode);
+    const resolvedEmpType = prefixType
+      || (empType && registry.isValidName(empType) ? empType : registry.getDefaultName());
 
     const role = await Role.create({
       code: normalizedCode,
@@ -83,13 +88,16 @@ exports.updateRole = async (req, res) => {
     if (updates.openings !== undefined) updates.openings = Number(updates.openings);
     if (updates.notNegotiable !== undefined) updates.notNegotiable = Boolean(updates.notNegotiable);
 
-    // Role codes starting with "F" are always freelance coding roles.
-    if (req.params.code.toUpperCase().trim().startsWith('F')) {
-      updates.empType = 'FREELANCE CODING';
+    const code = req.params.code.toUpperCase().trim();
+    const prefixType = registry.resolveByPrefix(code);
+    // Prefix rule is authoritative: if the role code matches a prefix-based
+    // employment type, force that type regardless of what the request body says.
+    if (prefixType) {
+      updates.empType = prefixType;
     }
 
     const role = await Role.findOneAndUpdate(
-      { code: req.params.code.toUpperCase() },
+      { code: code },
       updates,
       { new: true, runValidators: true }
     );

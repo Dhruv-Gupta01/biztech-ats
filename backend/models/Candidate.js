@@ -8,7 +8,8 @@ const candidateSchema = new mongoose.Schema({
   roleCode: { type: String, required: true, uppercase: true, trim: true },
   employmentType: {
     type: String,
-    enum: ['Full-Time', 'Part-Time', 'Contract', 'FREELANCE CODING', 'Medical Hiring'],
+    required: true,
+    trim: true,
     default: 'Full-Time'
   },
   yearsOfExperience: { type: Number, required: true, min: 0 },
@@ -135,31 +136,33 @@ const candidateSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
-// Role codes starting with "F" are always FREELANCE CODING candidates. This
-// keeps employmentType in sync whether the candidate arrives via resume upload,
-// CSV import, the apply form, or a manual recruiter edit.
-candidateSchema.pre('save', function applyFreelanceRoleCode(next) {
-  if (this.roleCode && this.roleCode.toUpperCase().trim().startsWith('F')) {
-    this.employmentType = 'FREELANCE CODING';
-  }
-  // Role codes starting with "M" are always MEDICAL HIRING candidates.
-  if (this.roleCode && this.roleCode.toUpperCase().trim().startsWith('M')) {
-    this.employmentType = 'Medical Hiring';
+// Role codes starting with "F" / "M" (etc.) are always tied to the prefix-based
+// employment type registered for that prefix. This keeps employmentType in sync
+// whether the candidate arrives via resume upload, CSV import, the apply form, or
+// a manual recruiter edit. The set of prefixes is now read from the dynamic
+// EmploymentType registry instead of a hardcoded constant.
+const registry = require('../utils/employmentRegistry');
+
+candidateSchema.pre('save', function applyRoleCodePrefix(next) {
+  if (this.roleCode) {
+    const resolved = registry.resolveByPrefix(this.roleCode);
+    if (resolved) {
+      this.employmentType = resolved;
+    }
   }
   next();
 });
 
 // Same rule for updateCandidate's direct .save() path and any findOneAndUpdate
 // usage elsewhere in the app.
-function enforceFreelanceForRoleCode(doc) {
-  if (doc && doc.roleCode && doc.roleCode.toUpperCase().trim().startsWith('F')) {
-    doc.employmentType = 'FREELANCE CODING';
-  }
-  // M-prefixed role codes are MEDICAL HIRING
-  if (doc && doc.roleCode && doc.roleCode.toUpperCase().trim().startsWith('M')) {
-    doc.employmentType = 'Medical Hiring';
+function enforcePrefixForRoleCode(doc) {
+  if (doc && doc.roleCode) {
+    const resolved = registry.resolveByPrefix(doc.roleCode);
+    if (resolved) {
+      doc.employmentType = resolved;
+    }
   }
 }
-candidateSchema.post('init', enforceFreelanceForRoleCode);
+candidateSchema.post('init', enforcePrefixForRoleCode);
 
 module.exports = mongoose.model('Candidate', candidateSchema);
