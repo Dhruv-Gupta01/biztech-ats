@@ -10,8 +10,9 @@ import {
 } from '../api/api';
 import { isFreelanceRoleCode, isFreelanceFilter, effectiveEmploymentType } from '../utils/employment';
 import { getColumnsForType, getOptionsForColumn } from '../utils/columnOptions';
+import { useEmploymentTypes } from '../contexts/EmploymentTypesContext';
 
-const typeLabel = (t) => (t === 'Contract' ? 'Contractual' : t === 'Part-Time' ? 'Part Time' : t === 'FREELANCE CODING' ? 'Freelance Coding' : t === 'Medical Hiring' ? 'Medical Hiring' : 'Full Time');
+const fallbackTypeLabel = (t) => (t === 'Contract' ? 'Contractual' : t === 'Part-Time' ? 'Part Time' : t === 'FREELANCE CODING' ? 'Freelance Coding' : t === 'Medical Hiring' ? 'Medical Hiring' : 'Full Time');
 const money = (n) => (n ? `₹${(n / 100000).toFixed(1)}L` : '—');
 
 const SCREENING_INTERVIEW_OPTIONS = ['Pass', 'Fail', 'Not Appeared', 'Rescheduled', 'Not interested', 'Referred to another position'];
@@ -68,7 +69,7 @@ function toCSV(rows, freelance = false) {
   }
   const headers = ['Name', 'Email', 'Role Code', 'Type', 'Location', 'CTC Current', 'CTC Expected', 'Status', 'Assessment Status', 'Suitability', 'Updated'];
   const lines = rows.map((c) => [
-    c.fullName, c.email, c.roleCode, typeLabel(c.employmentType), c.location || '',
+    c.fullName, c.email, c.roleCode, fallbackTypeLabel(c.employmentType), c.location || '',
     c.ctcCurrent || '', c.ctcExpected || '', c.status, c.assessmentStatus, c.score?.suitabilityRating ?? '', c.createdAt || ''
   ].join(','));
   return [headers.join(','), ...lines].join('\n');
@@ -76,6 +77,7 @@ function toCSV(rows, freelance = false) {
 
 function CandidatePool() {
   const { user } = useAuth();
+  const { employmentTypes, typeLabel } = useEmploymentTypes();
   const [candidates, setCandidates] = useState([]);
   const [allSources, setAllSources] = useState([]);
   const [roles, setRoles] = useState([]);
@@ -689,17 +691,23 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
       <div className="filters-row">
         <select value={filters.employmentType} onChange={(e) => setFilters({ ...filters, employmentType: e.target.value, roleCode: '', statusColumn: '', statusColumnValue: '' })}>
           <option value="">All employment types</option>
-          <option value="Full-Time">Full Time</option>
-          <option value="Contract">Contractual</option>
-          <option value="Part-Time">Part Time</option>
-          <option value="FREELANCE CODING">Freelance Coding</option>
-          <option value="Medical Hiring">Medical Hiring</option>
+          {employmentTypes.map((et) => (
+            <option key={et.name} value={et.name}>{et.label || et.name}</option>
+          ))}
         </select>
         <select value={filters.roleCode} onChange={(e) => setFilters({ ...filters, roleCode: e.target.value })}>
           <option value="">All role codes</option>
           {roleCodes.filter((code) => {
-            if (filters.employmentType === 'FREELANCE CODING' || filters.employmentType === 'Contract') return code.toUpperCase().startsWith('F');
-            if (filters.employmentType === 'Medical Hiring') return code.toUpperCase().startsWith('M');
+            if (filters.employmentType && filters.employmentType !== 'Part-Time' && filters.employmentType !== 'Full-Time') {
+              // Determine prefix via the employment-type context registry
+              const et = employmentTypes.find((t) => t.name === filters.employmentType);
+              if (et && et.isPrefixBased && et.prefix) {
+                return code.toUpperCase().startsWith(String(et.prefix).toUpperCase());
+              }
+              // Backward-compatible fallback names
+              if (filters.employmentType === 'FREELANCE CODING' || filters.employmentType === 'Contract') return code.toUpperCase().startsWith('F');
+              if (filters.employmentType === 'Medical Hiring') return code.toUpperCase().startsWith('M');
+            }
             return true;
           }).map((code) => <option key={code} value={code}>{code}</option>)}</select>
         <select value={filters.statusColumn} onChange={(e) => setFilters({ ...filters, statusColumn: e.target.value, statusColumnValue: '' })}>

@@ -3,8 +3,9 @@ import StatusBadge from './StatusBadge';
 import CandidateProfileModal from './CandidateProfileModal';
 import { fetchCandidates, fetchEmailTemplates, fetchRoles, sendOutreachEmail } from '../api/api';
 import TemplateManager from './TemplateManager';
-import { typeLabel, effectiveEmploymentType } from '../utils/employment';
+import { effectiveEmploymentType } from '../utils/employment';
 import { getColumnsForType } from '../utils/columnOptions';
+import { useEmploymentTypes } from '../contexts/EmploymentTypesContext';
 
 function fillTemplate(str, vars) {
   return str.replace(/{{(.*?)}}/g, (_, key) => vars[key.trim()] ?? `{{${key.trim()}}}`);
@@ -30,6 +31,7 @@ function SkillSearch() {
   const [templateId, setTemplateId] = useState('');
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState(null);
+  const { typeLabel, employmentTypes } = useEmploymentTypes();
   const [showTemplateManager, setShowTemplateManager] = useState(false);
 
   useEffect(() => {
@@ -238,17 +240,17 @@ function SkillSearch() {
         />
         <select value={filters.employmentType} onChange={(e) => setFilters({ ...filters, employmentType: e.target.value, roleCode: '', statusColumn: '' })}>
           <option value="">All employment types</option>
-          <option value="Full-Time">Full Time</option>
-          <option value="Part-Time">Part Time</option>
-          <option value="Contract">Contractual</option>
-          <option value="FREELANCE CODING">Freelance Coding</option>
-          <option value="Medical Hiring">Medical Hiring</option>
+          {employmentTypes.map((et) => (
+            <option key={et.name} value={et.name}>{et.label || et.name}</option>
+          ))}
         </select>
         <select value={filters.roleCode} onChange={(e) => setFilters({ ...filters, roleCode: e.target.value, statusColumn: '' })}>
           <option value="">All role codes</option>
           {[...new Set(candidates.map(c => c.roleCode).filter(Boolean))].sort()
             .filter((code) => {
               const codeUpper = code.toUpperCase();
+              const et = employmentTypes.find((t) => t.name === filters.employmentType);
+              if (et && et.isPrefixBased && et.prefix) return codeUpper.startsWith(String(et.prefix).toUpperCase());
               if (filters.employmentType === 'FREELANCE CODING' || filters.employmentType === 'Contract') return codeUpper.startsWith('F');
               if (filters.employmentType === 'Medical Hiring') return codeUpper.startsWith('M');
               return true;

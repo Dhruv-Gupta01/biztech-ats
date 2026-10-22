@@ -4,6 +4,7 @@ import { Chart, registerables } from 'chart.js';
 import { fetchStatistics, exportStatisticsCSV } from '../api/api';
 import { getColumnsForType, getOptionsForColumn } from '../utils/columnOptions';
 import { fetchRoles } from '../api/api';
+import { useEmploymentTypes } from '../contexts/EmploymentTypesContext';
 
 Chart.register(...registerables);
 
@@ -49,6 +50,7 @@ function StatisticsReport() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [exporting, setExporting] = useState(false);
+  const { employmentTypes } = useEmploymentTypes();
   const [roleCodes, setRoleCodes] = useState([]);
   const [filters, setFilters] = useState({
     startDate: '',
@@ -148,10 +150,10 @@ function StatisticsReport() {
   const employmentTypeFunnels = useMemo(() => {
     const { candidates } = statistics || {};
     if (!candidates) return [];
-    const employmentTypes = ['Full-Time', 'Contract', 'Part-Time', 'FREELANCE CODING', 'Medical Hiring'];
     return employmentTypes.map((et) => {
-      const etCandidates = candidates.filter((c) => c.employmentType === et);
-      const columns = getColumnsForType(et);
+      const etName = typeof et === 'string' ? et : et.name;
+      const etCandidates = candidates.filter((c) => c.employmentType === etName);
+      const columns = getColumnsForType(etName);
       const counts = columns.map((col) => {
         if (col.field === 'interviewRounds') {
           const withRounds = etCandidates.filter((c) => {
@@ -163,13 +165,13 @@ function StatisticsReport() {
         return { label: col.label, count: etCandidates.filter((c) => c[col.field]).length };
       }).filter((item) => item.count > 0);
       return {
-        employmentType: et,
+        employmentType: etName,
         labels: counts.map((c) => c.label),
         data: counts.map((c) => c.count),
         colors: counts.map((c) => STATUS_COLORS[c.label] || '#6B7280')
       };
     }).filter((et) => et.labels.length > 0);
-  }, [statistics]);
+  }, [statistics, employmentTypes]);
 
   useEffect(() => { loadStatistics(); }, [filters]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -293,17 +295,18 @@ function StatisticsReport() {
           <input type="date" value={filters.endDate} onChange={(e) => setFilters({ ...filters, endDate: e.target.value })} />
           <select value={filters.employmentType} onChange={(e) => setFilters({ ...filters, employmentType: e.target.value, roleCode: '', statusColumn: '', statusColumnValue: '' })}>
             <option value="">All Employment Types</option>
-            <option value="Full-Time">Full Time</option>
-            <option value="Contract">Contractual</option>
-            <option value="Part-Time">Part Time</option>
-            <option value="FREELANCE CODING">Freelance Coding</option>
-            <option value="Medical Hiring">Medical Hiring</option>
+            {employmentTypes.map((et) => (
+              <option key={et.name} value={et.name}>{et.label || et.name}</option>
+            ))}
           </select>
           <select value={filters.roleCode} onChange={(e) => setFilters({ ...filters, roleCode: e.target.value })}>
             <option value="">All Role Codes</option>
             {roleCodes.filter((code) => {
-              if (filters.employmentType === 'FREELANCE CODING' || filters.employmentType === 'Contract') return code.toUpperCase().startsWith('F');
-              if (filters.employmentType === 'Medical Hiring') return code.toUpperCase().startsWith('M');
+              const codeUpper = code.toUpperCase();
+              const et = employmentTypes.find((t) => t.name === filters.employmentType);
+              if (et && et.isPrefixBased && et.prefix) return codeUpper.startsWith(String(et.prefix).toUpperCase());
+              if (filters.employmentType === 'FREELANCE CODING' || filters.employmentType === 'Contract') return codeUpper.startsWith('F');
+              if (filters.employmentType === 'Medical Hiring') return codeUpper.startsWith('M');
               return true;
             }).map((code) => <option key={code} value={code}>{code}</option>)}
           </select>

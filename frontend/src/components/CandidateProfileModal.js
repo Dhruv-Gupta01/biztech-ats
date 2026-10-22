@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import StatusBadge from './StatusBadge';
 import { updateCandidate, fetchProjects } from '../api/api';
-import { effectiveEmploymentType, typeLabel, isFreelanceRoleCode, isFreelanceCandidate } from '../utils/employment';
+import { useEmploymentTypes } from '../contexts/EmploymentTypesContext';
+import { effectiveEmploymentType, isFreelanceRoleCode, isFreelanceCandidate } from '../utils/employment';
 
 const money = (n) => (n ? `₹${(n / 100000).toFixed(1)}L` : '—');
 
@@ -41,6 +42,7 @@ function Field({ label, children }) {
 }
 
 function CandidateProfileModal({ candidate, role, onClose, onSaved }) {
+  const { employmentTypes, typeLabel } = useEmploymentTypes();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(null);
@@ -253,11 +255,10 @@ function CandidateProfileModal({ candidate, role, onClose, onSaved }) {
                 <div>
                   <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-500)' }}>Employment Type</label>
                   <select value={form.employmentType} onChange={(e) => setForm({ ...form, employmentType: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid var(--border)', marginTop: 4 }}>
-                    <option value="Full-Time">Full Time</option>
-                    <option value="Contract">Contractual</option>
-                    <option value="Part-Time">Part Time</option>
-                    <option value="Internship">Internship</option>
-                    <option value="FREELANCE CODING">Freelance Coding</option>
+                    <option value="">Select employment type</option>
+                    {employmentTypes.map((et) => (
+                      <option key={et.name} value={et.name}>{et.label || et.name}</option>
+                    ))}
                   </select>
                   {isFreelanceRoleCode(form.roleCode) && (
                     <p style={{ fontSize: 11, color: 'var(--text-500)', margin: '4px 0 0' }}>

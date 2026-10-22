@@ -6,6 +6,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { fetchEmploymentTypes, createEmploymentType, updateEmploymentType, deleteEmploymentType, deactivateEmploymentType } from '../api/api';
+import { EMPLOYMENT_TYPES } from '../utils/employment';
 
 const EmploymentTypesContext = createContext({
   employmentTypes: [],           // [{name, label, isActive, isPrefixBased, prefix, sortOrder}]
@@ -30,7 +31,14 @@ export const EmploymentTypesProvider = ({ children }) => {
     fetchEmploymentTypes()
       .then((res) => {
         if (!cancelled) {
-          setEmploymentTypes(res.data || []);
+          const fetched = (res && res.data) || [];
+          // Fall back to built-in defaults when the backend isn't seeded/running,
+          // so every dropdown still renders the core set.
+          if (fetched.length) {
+            setEmploymentTypes(fetched);
+          } else {
+            setEmploymentTypes(EMPLOYMENT_TYPES.map(name => ({ name, label: name, isActive: true, isPrefixBased: false, sortOrder: 0 })));
+          }
           setLoading(false);
         }
       })
@@ -38,6 +46,7 @@ export const EmploymentTypesProvider = ({ children }) => {
         if (!cancelled) {
           console.error('[EmploymentTypes] Failed to fetch:', err);
           setError(err.message || 'Unknown error');
+          setEmploymentTypes(EMPLOYMENT_TYPES.map(name => ({ name, label: name, isActive: true, isPrefixBased: false, sortOrder: 0 })));
           setLoading(false);
         }
       });
@@ -49,12 +58,13 @@ export const EmploymentTypesProvider = ({ children }) => {
     if (!t) return t;
     const found = employmentTypes.find((et) => et.name === t);
     if (found && found.label) return found.label;
-    // Fallback display map (kept as safety net)
-    return t === 'Contract' ? 'Contractual'
-      : t === 'Part-Time' ? 'Part Time'
-        : t === 'FREELANCE CODING' ? 'Freelance Coding'
-          : t === 'Medical Hiring' ? 'Medical Hiring'
-            : 'Full Time';
+    // Legacy display map (safety net when the registry hasn't loaded yet)
+    if (t === 'Contract') return 'Contractual';
+    if (t === 'Part-Time') return 'Part Time';
+    if (t === 'FREELANCE CODING') return 'Freelance Coding';
+    if (t === 'Medical Hiring') return 'Medical Hiring';
+    // Unknown (dynamically added) type — show the raw name
+    return t;
   };
 
   const getByName = (name) => {

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { applyCandidate, parseResume, fetchRoles } from '../api/api';
+import { useEmploymentTypes } from '../contexts/EmploymentTypesContext';
 
 const initialState = {
   fullName: '', email: '', phone: '', location: '', roleCode: '',
@@ -11,6 +12,7 @@ const initialState = {
 // staff can tag Manual/Referral additions. Candidates applying themselves never
 // see this — their source is always fixed to "Form".
 function CandidateForm({ allowManualSource = false }) {
+  const { employmentTypes } = useEmploymentTypes();
   const [form, setForm] = useState(initialState);
   const [roles, setRoles] = useState([]);
   const [rolesLoading, setRolesLoading] = useState(true);
@@ -31,6 +33,16 @@ function CandidateForm({ allowManualSource = false }) {
       .catch((err) => { console.error('[CandidateForm] fetchRoles failed:', err); setRolesError(`Could not load roles: ${err.message}`); })
       .finally(() => setRolesLoading(false));
   }, []);
+
+  // Keep the preselected employment type valid against the live registry.
+  useEffect(() => {
+    if (employmentTypes.length === 0) return;
+    setForm((f) => {
+      const names = employmentTypes.map((et) => et.name);
+      if (f.employmentType && names.includes(f.employmentType)) return f;
+      return { ...f, employmentType: names[0] };
+    });
+  }, [employmentTypes]);
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
@@ -141,9 +153,12 @@ function CandidateForm({ allowManualSource = false }) {
           </div>
           <div>
             <label>Employment Type</label>
-            <select name="employmentType" value={form.employmentType} onChange={handleChange}>
-              <option>Full-Time</option><option>Part-Time</option><option>Contract</option><option>Internship</option>
-            </select>
+             <select name="employmentType" value={form.employmentType} onChange={handleChange}>
+               <option value="">Select employment type</option>
+               {employmentTypes.map((et) => (
+                 <option key={et.name} value={et.name}>{et.label || et.name}</option>
+               ))}
+             </select>
           </div>
           <div><label>Years of Experience *</label><input name="yearsOfExperience" type="number" min="0" value={form.yearsOfExperience} onChange={handleChange} required /></div>
           <div><label>Notice Period</label><input name="noticePeriod" value={form.noticePeriod} onChange={handleChange} /></div>

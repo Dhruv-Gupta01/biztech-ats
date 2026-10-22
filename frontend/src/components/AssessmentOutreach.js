@@ -2,8 +2,9 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchCandidates, fetchRoles, sendOutreachEmail, fetchEmailTemplates, fetchProjects, uploadOutreachAttachments, deleteOutreachAttachment, fetchOutreachAttachments } from '../api/api';
 import TemplateManager from './TemplateManager';
 import {
-  isFreelanceRoleCode, isFreelanceFilter, isFreelanceCandidate, effectiveEmploymentType, typeLabel
+  isFreelanceRoleCode, isFreelanceFilter, isFreelanceCandidate, effectiveEmploymentType
 } from '../utils/employment';
+import { useEmploymentTypes } from '../contexts/EmploymentTypesContext';
 
 function fillTemplate(str, vars) {
   return str.replace(/{{(.*?)}}/g, (_, key) => vars[key.trim()] ?? `{{${key.trim()}}}`);
@@ -69,13 +70,15 @@ function AssessmentOutreach() {
   const [selectedIds, setSelectedIds] = useState([]);
   const [roleFilter, setRoleFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const { employmentTypes, typeLabel } = useEmploymentTypes();
   const [empTypeFilter, setEmpTypeFilter] = useState('');
+
+  const [showTemplateManager, setShowTemplateManager] = useState(false);
   const [projects, setProjects] = useState(['Terminus', 'Snorkle', 'Alegion']);
   const [freelanceFilters, setFreelanceFilters] = useState(EMPTY_FREELANCE_FILTERS);
   const [templateId, setTemplateId] = useState('');
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState(null);
-  const [showTemplateManager, setShowTemplateManager] = useState(false);
 
   // Attachments for THIS send. `linkAttachments` are plain URLs; `files` are
   // real files uploaded from the recruiter's device and stored server-side.
@@ -360,13 +363,12 @@ function AssessmentOutreach() {
             <div className="outreach-filter-grid">
               <div className={`outreach-filter-field${empTypeFilter ? ' is-set' : ''}`}>
                 <label>Employment Type</label>
-                <select value={empTypeFilter} onChange={(e) => handleEmpTypeFilterChange(e.target.value)}>
-                  <option value="">All employment types</option>
-                  <option value="Full-Time">Full Time</option>
-                  <option value="Contract">Contractual</option>
-                  <option value="Part-Time">Part Time</option>
-                  <option value="FREELANCE CODING">Freelance Coding</option>
-                </select>
+                 <select value={empTypeFilter} onChange={(e) => handleEmpTypeFilterChange(e.target.value)}>
+                   <option value="">All employment types</option>
+                   {employmentTypes.map((et) => (
+                     <option key={et.name} value={et.name}>{et.label || et.name}</option>
+                   ))}
+                 </select>
               </div>
 
               {!freelanceMode && (
