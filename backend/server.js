@@ -28,9 +28,6 @@ connectDB();
 // refreshes the in-memory cache used by model hooks / per-row imports.
 employmentTypeRegistry.ensureDefaultEmploymentTypes()
   .then(() => employmentTypeRegistry.refreshEmploymentTypes())
-  .then(() => {
-    console.log('[EmploymentTypes] Registry ready.');
-  })
   .catch((err) => {
     console.error('[EmploymentTypes] Registry init failed:', err);
   });
