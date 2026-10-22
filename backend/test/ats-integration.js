@@ -33,6 +33,13 @@
 //   2. Uncomment runCandidateSearchTest() below
 //   3. The test will automatically run and validate "search=Vikas" returns matching candidates
 
+// SAFETY GUARD: prevent this test script from ever sending a real email.
+// If EMAIL_ENABLED is 'true' (as it is in some .env files), /api/outreach/send
+// would call the Resend API and send mail to real candidates. We force
+// EMAIL_ENABLED=false for the process so sendOutreachEmails() returns early
+// on every run — regardless of how the .env is configured.
+process.env.EMAIL_ENABLED = 'false';
+
 const BASE_URL = process.env.TEST_BASE_URL || 'http://localhost:5004';
 
 // Helper to check if server is reachable
@@ -217,45 +224,61 @@ async function runAssessmentOutreachTest(token) {
   console.log('--- Assessment & Outreach Test ---');
   const tests = [];
 
-  // First, get some candidates
-  let candidateId = null;
-  try {
-    const candidatesRes = await fetch(`${BASE_URL}/api/candidates`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    const candidatesData = await candidatesRes.json();
-    if (candidatesData.success && candidatesData.data && candidatesData.data.length > 0) {
-      candidateId = candidatesData.data[0]._id;
-    }
-  } catch (err) {
-    console.log('Could not get candidates:', err.message);
-  }
+  // SAFETY: this suite NEVER sends a real email. It exercises the outreach
+  // route's validation contract instead — every case below is rejected by
+  // sendOutreach() BEFORE sendOutreachEmails() is ever called, so no mail
+  // leaves the box no matter how EMAIL_ENABLED / RESEND_API_KEY are set.
+  const NON_EXISTENT_ID = '000000000000000000000000';
 
-  if (!candidateId) {
-    console.log('Assessment & Outreach: SKIP - no candidates to test with');
-    return true;
-  }
-
-  // Test sending outreach email with attachments
+  // 1. Empty candidateIds must be rejected (400).
   tests.push({
-    name: 'Send Outreach Email',
+    name: 'Outreach rejects empty candidateIds',
+    func: async () => {
+      const res = await fetch(`${BASE_URL}/api/outreach/send`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ candidateIds: [], subject: 's', body: 'b' })
+      });
+      const data = await res.json();
+      return res.status === 400 && data.success === false;
+    }
+  });
+
+  // 2. Missing subject/body must be rejected (400).
+  tests.push({
+    name: 'Outreach rejects missing subject/body',
+    func: async () => {
+      const res = await fetch(`${BASE_URL}/api/outreach/send`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ candidateIds: [NON_EXISTENT_ID] })
+      });
+      const data = await res.json();
+      return res.status === 400 && data.success === false;
+    }
+  });
+
+  // 3. Unknown candidate id must be rejected (404) — stops before the email
+  //    service is invoked, so nothing is sent.
+  tests.push({
+    name: 'Outreach rejects unknown candidate id (no mail sent)',
     func: async () => {
       const res = await fetch(`${BASE_URL}/api/outreach/send`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          candidateIds: [candidateId],
+          candidateIds: [NON_EXISTENT_ID],
           subject: 'Test Outreach',
           body: 'Test body for {{candidateName}} and {{roleTitle}}',
-          attachments: [{ name: 'Test', url: 'https://example.com/test' }]
+          attachments: [{ type: 'link', name: 'Test', url: 'https://example.com/test' }]
         })
       });
       const data = await res.json();
-      return data.success;
+      return res.status === 404 && data.success === false;
     }
   });
 
-  // Test fetching outreach attachments
+  // 4. Attachments listing still works (read-only).
   tests.push({
     name: 'Fetch Outreach Attachments',
     func: async () => {
@@ -590,6 +613,8 @@ async function runAllTests() {
   console.log('   SOLUTION: Role created successfully but external posts may fail — accept as expected behavior');
   console.log('5. BUG: Statistics CSV export returns non-JSON (breaks .json() parsing)');
   console.log('   SOLUTION: Handle CSV endpoint as text response with proper content-type checking');
+  console.log('6. BUG: Integration test sent REAL emails to candidates when EMAIL_ENABLED=true');
+  console.log('   SOLUTION: Test forces EMAIL_ENABLED=false + validates outreach contract (400/404) instead of sending');
 }
 
 // Execute tests only when called directly

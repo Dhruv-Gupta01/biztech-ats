@@ -88,9 +88,9 @@ function RolesCodes() {
           <div><input placeholder="Title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></div>
           <div><input placeholder="Department" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} /></div>
           <div>
-            <select value={form.empType} onChange={(e) => setForm({ ...form, empType: e.target.value })}>
-              <option>Full-Time</option><option>Part-Time</option><option>Contract</option><option>Internship</option><option>FREELANCE CODING</option>
-            </select>
+<select value={form.empType} onChange={(e) => setForm({ ...form, empType: e.target.value })}>
+                <option>Full-Time</option><option>Part-Time</option><option>Contract</option><option>Medical Hiring</option><option>FREELANCE CODING</option>
+              </select>
             {isFreelanceRoleCode(form.code) && (
               <p style={{ fontSize: 11, color: 'var(--text-500)', margin: '4px 0 0' }}>
                 Codes starting with “F” are Freelance Coding.
