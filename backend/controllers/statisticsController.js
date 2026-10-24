@@ -95,7 +95,12 @@ exports.getStatistics = async (req, res) => {
     if (employmentType) filter.employmentType = employmentType;
     // Would require a field like "rebookCount" or similar
 
-    const candidates = await Candidate.find(filter).sort({ updatedAt: -1 });
+    // lean + no raw resume bytes/text — see getCandidates; full hydration OOM-crashed the server.
+    const candidates = await Candidate.find(filter, '-resumeData -resumeText').sort({ updatedAt: -1 }).lean();
+    candidates.forEach((c) => {
+      const forced = registry.resolveByPrefix(c.roleCode);
+      if (forced) c.employmentType = forced;
+    });
 
     // Calculate statistics
     const total = candidates.length;
@@ -312,7 +317,12 @@ exports.exportStatisticsCSV = async (req, res) => {
       }
     }
 
-    const candidates = await Candidate.find(filter).sort({ updatedAt: -1 });
+    // lean + no raw resume bytes/text — see getCandidates; full hydration OOM-crashed the server.
+    const candidates = await Candidate.find(filter, '-resumeData -resumeText').sort({ updatedAt: -1 }).lean();
+    candidates.forEach((c) => {
+      const forced = registry.resolveByPrefix(c.roleCode);
+      if (forced) c.employmentType = forced;
+    });
 
     // Generate CSV
     const csvLines = [];

@@ -1,6 +1,7 @@
 const Candidate = require('../models/Candidate');
 const Role = require('../models/Role');
 const { buildHistoryEntries } = require('../utils/history');
+const registry = require('../utils/employmentRegistry');
 const { parseResumeText } = require('../utils/resumeParser');
 
 const STOP_WORDS = new Set([
@@ -297,7 +298,15 @@ exports.getCandidates = async (req, res) => {
         filter[options] = { $exists: true, $ne: null, $ne: '' };
       }
     }
-    const candidates = await Candidate.find(filter).sort({ createdAt: -1 });
+    // lean + dropping the raw resume bytes/text: this returns the whole pool in one
+    // response, and hydrating thousands of full documents OOM-crashed the server.
+    // Lean skips the schema's post-init prefix rule, so re-apply it here to keep the
+    // same F/M employment-type behaviour.
+    const candidates = await Candidate.find(filter, '-resumeData -resumeText').sort({ createdAt: -1 }).lean();
+    candidates.forEach((c) => {
+      const forced = registry.resolveByPrefix(c.roleCode);
+      if (forced) c.employmentType = forced;
+    });
     return res.status(200).json({ success: true, count: candidates.length, data: candidates });
   } catch (err) {
     console.error(err);

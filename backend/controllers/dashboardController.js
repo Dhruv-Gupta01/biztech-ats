@@ -29,17 +29,19 @@ exports.getMetrics = async (req, res) => {
   try {
     const { roleCode } = req.query;
 
-    const [allCandidates, roles] = await Promise.all([
-      Candidate.find().sort({ updatedAt: -1, createdAt: -1 }),
-      Role.find()
+    // Projection + lean on purpose: this runs on every Dashboard load and the pool is
+    // now in the tens of thousands. Hydrating full documents blew past Render's ~256MB
+    // heap (OOM crash loop), and the metrics only read these few fields.
+    const scopedFilter = roleCode ? { roleCode: roleCode.toUpperCase().trim() } : {};
+    const [candidates, roles] = await Promise.all([
+      Candidate.find(scopedFilter, 'fullName roleCode status source score.suitabilityRating updatedAt createdAt')
+        .sort({ updatedAt: -1, createdAt: -1 })
+        .lean(),
+      Role.find().lean()
     ]);
 
     // openRoles is a global count regardless of scope — it describes the org's roles, not this one role's candidates.
     const openRoles = roles.filter((r) => r.status === 'Open').length;
-
-    const candidates = roleCode
-      ? allCandidates.filter((c) => c.roleCode === roleCode.toUpperCase().trim())
-      : allCandidates;
 
     const total = candidates.length;
     const scored = candidates.filter((c) => c.score && c.score.suitabilityRating != null);
