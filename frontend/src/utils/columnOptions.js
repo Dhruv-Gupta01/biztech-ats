@@ -1,6 +1,8 @@
 // Shared column options for column picker ("All Status" filter) 
 // and option picker ("Options" filter). Each job type shows different columns.
 
+import { isFreelanceLikeType } from './employment';
+
 export const STATUS_OPTIONS = [
   'Information Form Response', 'Interview 1', 'Interview 1 Shortlisted', 'Interview 2',
   'Interview 2 Shortlisted', 'Assessment 1', 'Assessment 1 Shortlisted', 'Assessment 1 Passed',
@@ -13,7 +15,7 @@ export const ASSESSMENT_STATUS_OPTIONS = ['Not Set', 'Selected', 'Rejected', 'No
 export const CV_SCREENING_OPTIONS = ['Not Set', 'Selected', 'Rejected', 'Refered for other position'];
 
 export const getColumnsForType = (employmentType) => {
-  if (employmentType === 'FREELANCE CODING' || employmentType === 'Contract') {
+  if (isFreelanceLikeType(employmentType)) {
     return [
       { field: 'screeningInterview', label: 'Screening Interview' },
       { field: 'calendlyLinkSent', label: 'Calendly Link Sent' },

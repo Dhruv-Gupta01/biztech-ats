@@ -12,7 +12,7 @@ import { isFreelanceRoleCode, isFreelanceFilter, effectiveEmploymentType } from 
 import { getColumnsForType, getOptionsForColumn } from '../utils/columnOptions';
 import { useEmploymentTypes } from '../contexts/EmploymentTypesContext';
 
-const fallbackTypeLabel = (t) => (t === 'Contract' ? 'Contractual' : t === 'Part-Time' ? 'Part Time' : t === 'FREELANCE CODING' ? 'Freelance Coding' : t === 'Medical Hiring' ? 'Medical Hiring' : 'Full Time');
+const fallbackTypeLabel = (t) => (t === 'Contract' ? 'Contractual' : t === 'Part-Time' ? 'Part Time' : t === 'FREELANCE CODING' ? 'Freelance Coding' : t === 'Medical Hiring' ? 'Medical Hiring' : (t === 'Freelance' || t === 'Freelance/Contract') ? t : 'Full Time');
 const money = (n) => (n ? `₹${(n / 100000).toFixed(1)}L` : '—');
 
 const SCREENING_INTERVIEW_OPTIONS = ['Pass', 'Fail', 'Not Appeared', 'Rescheduled', 'Not interested', 'Referred to another position'];

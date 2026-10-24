@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchCandidates, fetchRoles, sendOutreachEmail, fetchEmailTemplates, fetchProjects, uploadOutreachAttachments, deleteOutreachAttachment, fetchOutreachAttachments } from '../api/api';
 import TemplateManager from './TemplateManager';
 import {
-  isFreelanceRoleCode, isFreelanceFilter, isFreelanceCandidate, effectiveEmploymentType
+  isFreelanceRoleCode, isFreelanceFilter, isFreelanceCandidate, isFreelanceLikeType, effectiveEmploymentType
 } from '../utils/employment';
 import { useEmploymentTypes } from '../contexts/EmploymentTypesContext';
 
@@ -250,7 +250,7 @@ function AssessmentOutreach() {
 
   const handleEmpTypeFilterChange = (value) => {
     setEmpTypeFilter(value);
-    if (value !== 'FREELANCE CODING' && value !== 'Contract') {
+    if (!isFreelanceLikeType(value)) {
       setRoleFilter('');
       setFreelanceFilters((prev) => ({ ...prev, roleCode: '' }));
     }

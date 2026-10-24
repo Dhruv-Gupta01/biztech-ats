@@ -267,6 +267,9 @@ exports.getCandidates = async (req, res) => {
         { employmentType: { $in: ['FREELANCE CODING', 'Contract'] } },
         { roleCode: { $regex: '^F', $options: 'i' } }
       ];
+    } else if (employmentType === 'Freelance' || employmentType === 'Freelance/Contract') {
+      // Independent of role code: exact match on the stored type.
+      filter.employmentType = employmentType;
     }
 
     if (status) filter.status = status;
