@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { resumeHref } from '../utils/resume';
 import { Bar, Pie, Line } from 'react-chartjs-2';
 import { Chart, registerables } from 'chart.js';
 import { fetchStatistics, exportStatisticsCSV } from '../api/api';
@@ -472,7 +473,7 @@ function StatisticsReport() {
                     <td>{c.lastStatus || c.status || ''}</td>
                     <td>
                       {c.resumeUrl && (
-                        <a href={`https://biztech-ats-backend-0jpt.onrender.com${c.resumeUrl}`} target="_blank" rel="noopener noreferrer">View</a>
+                        <a href={resumeHref(c.resumeUrl)} target="_blank" rel="noopener noreferrer">View</a>
                       )}
                     </td>
                     <td>{c.score ?? ''}</td>

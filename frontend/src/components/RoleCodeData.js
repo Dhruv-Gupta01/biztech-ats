@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { resumeHref } from '../utils/resume';
 import { fetchCandidates, fetchRoles, updateCandidate } from '../api/api';
 import CandidateProfileModal from './CandidateProfileModal';
 import { effectiveEmploymentType, isFreelanceCandidate } from '../utils/employment';
@@ -196,7 +197,7 @@ function RoleCodeData() {
                     </td>
                     <td>
                       {c.resumeUrl ? (
-                        <a href={`${process.env.REACT_APP_API_URL}${c.resumeUrl}`} target="_blank" rel="noopener noreferrer" className="link-button">
+                        <a href={resumeHref(c.resumeUrl)} target="_blank" rel="noopener noreferrer" className="link-button">
                           View CV
                         </a>
                       ) : (

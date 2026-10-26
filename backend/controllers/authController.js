@@ -23,6 +23,9 @@ exports.signup = async (req, res) => {
     if (!fullName || !email || !password) {
       return res.status(400).json({ success: false, message: 'fullName, email and password are required.' });
     }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) {
+      return res.status(400).json({ success: false, message: 'Please enter a valid email address.' });
+    }
     if (password.length < 6) {
       return res.status(400).json({ success: false, message: 'Password must be at least 6 characters.' });
     }
