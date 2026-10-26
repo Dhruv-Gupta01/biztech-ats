@@ -73,6 +73,8 @@ function SkillSearch() {
       .filter(s => s.length > 0);
   }, [skillQuery]);
 
+  // Render only the first rows; thousands of DOM rows freeze the browser.
+  const [shown, setShown] = useState(200);
   const results = useMemo(() => {
     return candidates.filter((c) => {
       const cSkills = (c.skills || []).map(s => s.toLowerCase().trim());
@@ -347,7 +349,7 @@ function SkillSearch() {
               </tr>
             </thead>
             <tbody>
-              {results.map((c) => (
+              {results.slice(0, shown).map((c) => (
                 <tr key={c._id}>
                   <td>
                     <input
@@ -389,6 +391,11 @@ function SkillSearch() {
               ))}
             </tbody>
           </table>
+          {results.length > shown && (
+            <div style={{ padding: 12, textAlign: 'center' }}>
+              <button className="btn-secondary" onClick={() => setShown(shown + 200)}>Show more ({shown} of {results.length})</button>
+            </div>
+          )}
           {results.length === 0 && <p style={{ padding: 20, color: 'var(--text-500)' }}>No candidates match these filters.</p>}
         </div>
       )}

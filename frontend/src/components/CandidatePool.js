@@ -94,6 +94,9 @@ function CandidatePool() {
   const csvInputRef = useRef(null);
 
   const [selectedIds, setSelectedIds] = useState([]);
+  // Render one page of rows at a time — thousands of rows with inline selects freeze the browser.
+  const PAGE_SIZE = 100;
+  const [page, setPage] = useState(0);
   const [slackMappings, setSlackMappings] = useState([]);
   const [slackTargetId, setSlackTargetId] = useState('');
   const [slackAssigning, setSlackAssigning] = useState(false);
@@ -447,6 +450,8 @@ const freelanceMode = isFreelanceFilter(filters.employmentType, filters.roleCode
 const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.roleCode && filters.roleCode.toUpperCase().startsWith('M'));
 
 
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+
   const filtered = useMemo(() => {
     return candidates.filter((c) => {
       // An F-prefixed role code always satisfies a FREELANCE CODING/CONTRACT filter,
@@ -484,6 +489,12 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
       return true;
     });
   }, [candidates, filters.employmentType, filters.statusColumn, filters.statusColumnValue, query]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount - 1);
+  const pageRows = useMemo(() => filtered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE), [filtered, currentPage]);
+  // Back to the first page whenever the result set changes.
+  useEffect(() => { setPage(0); }, [filters, query]);
 
   const exportCSV = () => {
     const blob = new Blob([toCSV(filtered, freelanceMode || medicalMode)], { type: 'text/csv' });
@@ -529,7 +540,7 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
 
   const toggleSelectAllFiltered = () => {
     const filteredIds = filtered.map((c) => c._id);
-    const allSelected = filteredIds.every((id) => selectedIds.includes(id));
+    const allSelected = filteredIds.every((id) => selectedSet.has(id));
     setSelectedIds(allSelected ? selectedIds.filter((id) => !filteredIds.includes(id)) : [...new Set([...selectedIds, ...filteredIds])]);
   };
 
@@ -787,7 +798,7 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
           <table>
             <thead>
               <tr>
-                <th><input type="checkbox" onChange={toggleSelectAllFiltered} checked={filtered.length > 0 && filtered.every((c) => selectedIds.includes(c._id))} /></th>
+                <th><input type="checkbox" onChange={toggleSelectAllFiltered} checked={filtered.length > 0 && filtered.every((c) => selectedSet.has(c._id))} /></th>
                 {freelanceMode ? (
                   <>
                     <th>Candidate</th><th>Role Code</th><th>Location</th>
@@ -849,11 +860,11 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
               )}
             </thead>
             <tbody>
-              {filtered.map((c) => {
+              {pageRows.map((c) => {
                 return (
                   <React.Fragment key={c._id}>
                      <tr>
-                        <td><input type="checkbox" checked={selectedIds.includes(c._id)} onChange={() => toggleSelected(c._id)} /></td>
+                        <td><input type="checkbox" checked={selectedSet.has(c._id)} onChange={() => toggleSelected(c._id)} /></td>
                         <td className="name-cell">
                           <button className="name-link" onClick={() => setProfileCandidate(c)}><strong>{c.fullName}</strong></button>
                           <br /><small>{c.email}</small>
@@ -1108,6 +1119,17 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
               })}
             </tbody>
           </table>
+        )}
+        {!loading && filtered.length > PAGE_SIZE && (
+          <div className="filters-row" style={{ padding: 12, alignItems: 'center', justifyContent: 'center' }}>
+            <button className="btn-secondary" onClick={() => setPage(0)} disabled={currentPage === 0}>« First</button>
+            <button className="btn-secondary" onClick={() => setPage(currentPage - 1)} disabled={currentPage === 0}>‹ Prev</button>
+            <span style={{ fontSize: 13, color: 'var(--text-500)' }}>
+              Page {currentPage + 1} of {pageCount} · showing {currentPage * PAGE_SIZE + 1}–{Math.min((currentPage + 1) * PAGE_SIZE, filtered.length)} of {filtered.length}
+            </span>
+            <button className="btn-secondary" onClick={() => setPage(currentPage + 1)} disabled={currentPage >= pageCount - 1}>Next ›</button>
+            <button className="btn-secondary" onClick={() => setPage(pageCount - 1)} disabled={currentPage >= pageCount - 1}>Last »</button>
+          </div>
         )}
         {!loading && filtered.length === 0 && <p style={{ padding: 20, color: 'var(--text-500)' }}>No candidates match these filters.</p>}
       </div>

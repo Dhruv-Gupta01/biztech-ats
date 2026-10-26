@@ -211,6 +211,7 @@ function AssessmentOutreach() {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
+  const [shown, setShown] = useState(200); // render cap — thousands of DOM rows freeze the browser
   const filteredCandidates = useMemo(() => {
     if (freelanceMode) {
       const f = freelanceFilters;
@@ -434,7 +435,7 @@ function AssessmentOutreach() {
             <div className="card">
               <h3 style={{ marginTop: 0, fontSize: 14 }}>Select Candidates ({selectedIds.length})</h3>
               <div className="candidate-select-list">
-                {filteredCandidates.map((c) => (
+                {filteredCandidates.slice(0, shown).map((c) => (
                   <label key={c._id} className={'candidate-select-item' + (selectedIds.includes(c._id) ? ' selected' : '')}>
                     <input type="checkbox" checked={selectedIds.includes(c._id)} onChange={() => toggleCandidate(c._id)} />
                     <div>
@@ -445,6 +446,9 @@ function AssessmentOutreach() {
                     </div>
                   </label>
                 ))}
+                {filteredCandidates.length > shown && (
+                  <button className="btn-secondary" onClick={() => setShown(shown + 200)}>Show more ({shown} of {filteredCandidates.length})</button>
+                )}
               </div>
             </div>
 
