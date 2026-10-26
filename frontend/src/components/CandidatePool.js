@@ -3,12 +3,12 @@ import StatusBadge from './StatusBadge';
 import CandidateProfileModal from './CandidateProfileModal';
 import { useAuth } from '../auth/AuthContext';
 import {
-  fetchCandidates, bulkImportCandidates, fetchSlackMappings, assignCandidatesToSlack,
+  fetchCandidates, fetchCandidateIds, fetchCandidateSources, bulkImportCandidates, fetchSlackMappings, assignCandidatesToSlack,
   fetchRoles, fetchFormSyncStatus, runFormSyncNow, analyzeCandidatesBulk,
   updateCandidate, deleteCandidateRecord, fetchProjects, createProject,
   checkCalendlyStatus
 } from '../api/api';
-import { isFreelanceRoleCode, isFreelanceFilter, isFreelanceLikeType, effectiveEmploymentType } from '../utils/employment';
+import { isFreelanceFilter, isFreelanceLikeType, effectiveEmploymentType } from '../utils/employment';
 import { getColumnsForType, getOptionsForColumn } from '../utils/columnOptions';
 import { useEmploymentTypes } from '../contexts/EmploymentTypesContext';
 
@@ -97,6 +97,9 @@ function CandidatePool() {
   // Render one page of rows at a time — thousands of rows with inline selects freeze the browser.
   const PAGE_SIZE = 100;
   const [page, setPage] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const filterSig = useRef('');
   const [slackMappings, setSlackMappings] = useState([]);
   const [slackTargetId, setSlackTargetId] = useState('');
   const [slackAssigning, setSlackAssigning] = useState(false);
@@ -365,14 +368,25 @@ function CandidatePool() {
   const [formSyncing, setFormSyncing] = useState(false);
   const [formSyncResult, setFormSyncResult] = useState(null);
 
+  // Server-side filter params shared by the page fetch, select-all and export.
+  const buildQueryParams = () => {
+    const p = {};
+    ['employmentType', 'roleCode', 'source', 'minExperience', 'maxExperience'].forEach((k) => { if (filters[k]) p[k] = filters[k]; });
+    if (filters.statusColumn) {
+      p.options = filters.statusColumn;
+      if (filters.statusColumnValue) p.optionValue = filters.statusColumnValue;
+    }
+    if (debouncedQuery.trim()) p.q = debouncedQuery.trim();
+    return p;
+  };
+
   const loadCandidates = () => {
     setLoading(true);
-    fetchCandidates(filters)
+    fetchCandidates({ ...buildQueryParams(), page: page + 1, limit: PAGE_SIZE })
       .then((res) => {
         setCandidates(res.data);
+        setTotal(res.total != null ? res.total : res.data.length);
         setLoadError('');
-        // Source dropdown options come from the first (unfiltered) load — avoids a second full fetch.
-        setAllSources((prev) => (prev.length ? prev : [...new Set(res.data.map((c) => c.source).filter(Boolean))].sort()));
         setProfileCandidate((prev) => {
           if (!prev) return prev;
           const updated = res.data.find((c) => c._id === prev._id);
@@ -390,10 +404,27 @@ function CandidatePool() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(loadCandidates, [filters]);
+  // Debounce the search box so each keystroke doesn't hit the server.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 400);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  // Refetch on filter/search/page change; a changed filter or search jumps back to page 1 first.
+  useEffect(() => {
+    const sig = JSON.stringify([filters, debouncedQuery]);
+    if (sig !== filterSig.current) {
+      const firstRun = filterSig.current === '';
+      filterSig.current = sig;
+      if (!firstRun && page !== 0) { setPage(0); return; }
+    }
+    loadCandidates();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters, debouncedQuery, page]);
 
   useEffect(() => {
     fetchRoles().then((res) => setRoles(res.data)).catch((err) => console.error('[CandidatePool] fetchRoles failed:', err));
+    fetchCandidateSources().then((res) => setAllSources(res.data || [])).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -452,52 +483,23 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
 
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
-  const filtered = useMemo(() => {
-    return candidates.filter((c) => {
-      // An F-prefixed role code always satisfies a FREELANCE CODING/CONTRACT filter,
-      // regardless of the stored employmentType on the row.
-      if (filters.employmentType === 'FREELANCE CODING' && !isFreelanceRoleCode(c.roleCode) && c.employmentType !== 'FREELANCE CODING') return false;
-      if (filters.employmentType === 'Contract' && !isFreelanceRoleCode(c.roleCode) && c.employmentType !== 'Contract') return false;
-      if (filters.employmentType && filters.employmentType !== 'FREELANCE CODING' && filters.employmentType !== 'Contract' && effectiveEmploymentType(c) !== filters.employmentType) return false;
-      // An M-prefixed role code always satisfies MEDICAL HIRING filter.
-      if (filters.employmentType === 'Medical Hiring' && !c.roleCode.toUpperCase().startsWith('M') && c.employmentType !== 'Medical Hiring') return false;
-      if (filters.statusColumn) {
-        // Filter candidates who have a non-empty value in the selected column
-        const field = filters.statusColumn;
-        let candidateValue;
-        if (field === 'status') {
-          candidateValue = c.status;
-        } else if (field === 'interviewRounds') {
-          candidateValue = Object.values(c.interviewRounds || {}).find(v => v && v !== 'Not set');
-        } else {
-          candidateValue = c[field];
-        }
-        if (!candidateValue) return false;
-        if (filters.statusColumnValue && filters.statusColumnValue !== '' && candidateValue !== filters.statusColumnValue) return false;
-      }
-      if (query) {
-        const q = query.toLowerCase();
-        const haystack = [
-          c.fullName, c.email, c.phone, c.location, c.roleCode, c.employmentType, effectiveEmploymentType(c), c.source,
-          ...(c.skills || []),
-          String(c.yearsOfExperience || ''),
-          String(c.ctcCurrent || ''),
-          String(c.ctcExpected || '')
-        ].join(' ').toLowerCase();
-        if (!haystack.includes(q)) return false;
-      }
-      return true;
-    });
-  }, [candidates, filters.employmentType, filters.statusColumn, filters.statusColumnValue, query]);
+  // Filtering and search run on the server; `candidates` is already the current page.
+  const filtered = candidates;
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount - 1);
-  const pageRows = useMemo(() => filtered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE), [filtered, currentPage]);
-  // Back to the first page whenever the result set changes.
-  useEffect(() => { setPage(0); }, [filters, query]);
+  const pageRows = filtered;
 
-  const exportCSV = () => {
-    const blob = new Blob([toCSV(filtered, freelanceMode || medicalMode)], { type: 'text/csv' });
+  const exportCSV = async () => {
+    // Export covers every match, not just the current page.
+    let rows = filtered;
+    try {
+      rows = (await fetchCandidates(buildQueryParams())).data;
+    } catch (err) {
+      setLoadError(`Could not export candidates: ${err.message}`);
+      return;
+    }
+    const blob = new Blob([toCSV(rows, freelanceMode || medicalMode)], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = (freelanceMode || medicalMode) ? 'medical_hiring_candidates_export.csv' : 'candidate_pool_export.csv'; a.click();
@@ -538,9 +540,16 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
 
   const toggleSelected = (id) => setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
-  const toggleSelectAllFiltered = () => {
-    const filteredIds = filtered.map((c) => c._id);
-    const allSelected = filteredIds.every((id) => selectedSet.has(id));
+  const toggleSelectAllFiltered = async () => {
+    // Selects/deselects every match across all pages (ids fetched from the server).
+    let filteredIds;
+    try {
+      filteredIds = (await fetchCandidateIds(buildQueryParams())).data;
+    } catch (err) {
+      setLoadError(`Could not select candidates: ${err.message}`);
+      return;
+    }
+    const allSelected = filteredIds.length > 0 && filteredIds.every((id) => selectedSet.has(id));
     setSelectedIds(allSelected ? selectedIds.filter((id) => !filteredIds.includes(id)) : [...new Set([...selectedIds, ...filteredIds])]);
   };
 
@@ -659,7 +668,7 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
   return (
     <>
       <h1 className="page-title">Candidate Pool</h1>
-      <p className="page-sub">{candidates.length} candidates on file</p>
+      <p className="page-sub">{total} candidate{total !== 1 ? 's' : ''}{(Object.keys(buildQueryParams()).length > 0) ? ' match these filters' : ' on file'}</p>
 
       {loadError && <div className="alert alert-error">⚠️ {loadError}</div>}
 
@@ -1120,12 +1129,12 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
             </tbody>
           </table>
         )}
-        {!loading && filtered.length > PAGE_SIZE && (
+        {!loading && total > PAGE_SIZE && (
           <div className="filters-row" style={{ padding: 12, alignItems: 'center', justifyContent: 'center' }}>
             <button className="btn-secondary" onClick={() => setPage(0)} disabled={currentPage === 0}>« First</button>
             <button className="btn-secondary" onClick={() => setPage(currentPage - 1)} disabled={currentPage === 0}>‹ Prev</button>
             <span style={{ fontSize: 13, color: 'var(--text-500)' }}>
-              Page {currentPage + 1} of {pageCount} · showing {currentPage * PAGE_SIZE + 1}–{Math.min((currentPage + 1) * PAGE_SIZE, filtered.length)} of {filtered.length}
+              Page {currentPage + 1} of {pageCount} · showing {currentPage * PAGE_SIZE + 1}–{Math.min((currentPage + 1) * PAGE_SIZE, total)} of {total}
             </span>
             <button className="btn-secondary" onClick={() => setPage(currentPage + 1)} disabled={currentPage >= pageCount - 1}>Next ›</button>
             <button className="btn-secondary" onClick={() => setPage(pageCount - 1)} disabled={currentPage >= pageCount - 1}>Last »</button>

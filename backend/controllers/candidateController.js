@@ -236,7 +236,7 @@ exports.getCandidates = async (req, res) => {
       roleCode, status, minExperience, maxExperience, source, employmentType,
       minSuitability, screeningInterview, calendlyLinkSent, calendlyLinkStatus,
       ndaIca, slackStatus, bootcampAttempts, bootcampStatus, onboarding,
-      project, projectStatus, options, optionValue
+      project, projectStatus, options, optionValue, q, page, limit, idsOnly
     } = req.query;
     const filter = {};
 
@@ -271,6 +271,9 @@ exports.getCandidates = async (req, res) => {
     } else if (employmentType === 'Freelance' || employmentType === 'Freelance/Contract') {
       // Independent of role code: exact match on the stored type.
       filter.employmentType = employmentType;
+    } else if (employmentType) {
+      // Any other registered type (Full-Time, Part-Time, Internship, ...): exact match.
+      filter.employmentType = employmentType;
     }
 
     if (status) filter.status = status;
@@ -292,11 +295,47 @@ exports.getCandidates = async (req, res) => {
     if (project) filter.project = project;
     if (projectStatus) filter.projectStatus = projectStatus;
     if (options) {
-      if (optionValue && optionValue !== '') {
+      if (options === 'interviewRounds') {
+        // Per-round map: "has a value" = any round other than blank / "Not set".
+        const roundVals = { $objectToArray: { $ifNull: ['$interviewRounds', {}] } };
+        const cond = optionValue
+          ? { $eq: ['$$this.v', optionValue] }
+          : { $and: [{ $ne: ['$$this.v', null] }, { $ne: ['$$this.v', ''] }, { $ne: ['$$this.v', 'Not set'] }] };
+        filter.$expr = { $gt: [{ $size: { $filter: { input: roundVals, cond } } }, 0] };
+      } else if (optionValue && optionValue !== '') {
         filter[options] = optionValue;
       } else {
-        filter[options] = { $exists: true, $ne: null, $ne: '' };
+        filter[options] = { $exists: true, $nin: [null, ''] };
       }
+    }
+    // Free-text search across the same fields the pool searched client-side.
+    if (q && String(q).trim()) {
+      const rx = new RegExp(String(q).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      const searchOr = ['fullName', 'email', 'phone', 'location', 'roleCode', 'employmentType', 'source', 'skills']
+        .map((f) => ({ [f]: rx }));
+      filter.$and = [...(filter.$and || []), { $or: searchOr }];
+    }
+
+    // Select-all support: just the ids of every match.
+    if (idsOnly) {
+      const ids = await Candidate.find(filter, '_id').lean();
+      return res.status(200).json({ success: true, count: ids.length, data: ids.map((c) => c._id) });
+    }
+
+    // Optional paging (the pool uses it). Without `page`, the full list is returned
+    // exactly as before for the other screens.
+    const pageNum = Math.max(1, parseInt(page, 10) || 0);
+    if (page) {
+      const pageSize = Math.min(500, Math.max(1, parseInt(limit, 10) || 100));
+      const [total, rows] = await Promise.all([
+        Candidate.countDocuments(filter),
+        Candidate.find(filter, '-resumeData -resumeText').sort({ createdAt: -1 }).skip((pageNum - 1) * pageSize).limit(pageSize).lean()
+      ]);
+      rows.forEach((c) => {
+        const forced = registry.resolveByPrefix(c.roleCode);
+        if (forced) c.employmentType = forced;
+      });
+      return res.status(200).json({ success: true, count: rows.length, total, page: pageNum, pageSize, data: rows });
     }
     // lean + dropping the raw resume bytes/text: this returns the whole pool in one
     // response, and hydrating thousands of full documents OOM-crashed the server.
@@ -311,6 +350,17 @@ exports.getCandidates = async (req, res) => {
   } catch (err) {
     console.error(err);
     return res.status(500).json({ success: false, message: 'Server error while fetching candidates.' });
+  }
+};
+
+// GET /api/candidates/sources — distinct source values for the filter dropdown.
+exports.getCandidateSources = async (req, res) => {
+  try {
+    const sources = (await Candidate.distinct('source')).filter(Boolean).sort();
+    return res.status(200).json({ success: true, data: sources });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Server error while fetching sources.' });
   }
 };
 

@@ -44,6 +44,15 @@ export async function bulkImportWithRole(formData) {
   return request(`${BASE_URL}/candidates/bulk-import-with-role`, { method: 'POST', body: formData });
 }
 
+export async function fetchCandidateIds(filters = {}) {
+  const params = new URLSearchParams({ ...Object.fromEntries(Object.entries(filters).filter(([, v]) => v)), idsOnly: '1' }).toString();
+  return request(`${BASE_URL}/candidates?${params}`);
+}
+
+export async function fetchCandidateSources() {
+  return request(`${BASE_URL}/candidates/sources`);
+}
+
 export async function fetchCandidates(filters = {}) {
   const mapped = { ...filters };
   if (mapped.column) {
