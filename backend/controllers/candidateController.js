@@ -665,7 +665,7 @@ exports.bulkUploadResumes = async (req, res) => {
           roleCode: roleCode.toUpperCase().trim(),
           employmentType: roleCode.toUpperCase().trim().startsWith('F')
             ? 'FREELANCE CODING'
-            : (parsedData.employmentType || 'Full-Time'),
+            : (role.empType || parsedData.employmentType || 'Full-Time'),
           yearsOfExperience: parsedData.yearsOfExperience || 0,
           ctcCurrent: parsedData.ctcCurrent || 0,
           ctcExpected: parsedData.ctcExpected || 0,

@@ -49,13 +49,13 @@ function extractSkills(text) {
 
 function extractLocation(text) {
   const locationPatterns = [
-    /(?:Location|Address|Based in|City)[\s:]+([A-Za-z\s,]+)/i,
+    /(?:Location|Address|Based in|City)[ \t:]+([A-Za-z \t,]+)/i,
   ];
   
   for (const pattern of locationPatterns) {
     const match = text.match(pattern);
     if (match) {
-      return match[1].trim();
+      return match[1].replace(/\s+/g, ' ').trim();
     }
   }
 
@@ -124,7 +124,7 @@ function extractYearsOfExperience(text) {
 function extractCurrentCTC(text) {
   const patterns = [
     /(?:Current CTC|Current Salary|CTC)[\s:]+(?:₹\s*)?([\d,]+(?:\.\d+)?)/i,
-    /(?:₹\s*)?([\d,]+(?:\.\d+)?)\s*(?:lakhs?|L|per annum|pa|p\.a\.)/i
+    /(?:₹[ \t]*)?\b(\d{1,3}(?:\.\d+)?)[ \t]*(?:lakhs?|lacs?|lpa|l|per annum|pa|p\.a\.)(?![A-Za-z])/i
   ];
   
   for (const pattern of patterns) {

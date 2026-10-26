@@ -8,7 +8,7 @@ exports.getStatus = async (req, res) => {
   try {
     const [lastRun, submittedCount, activeForms] = await Promise.all([
       FormSyncRun.findOne().sort({ createdAt: -1 }),
-      Candidate.countDocuments({ 'formSubmissions.submittedAt': { $ne: null } }),
+      Candidate.countDocuments({ formSubmissions: { $elemMatch: { submittedAt: { $ne: null } } } }),
       GoogleForm.find({ isActive: true })
     ]);
     return res.status(200).json({
@@ -56,6 +56,9 @@ exports.createForm = async (req, res) => {
     const form = await GoogleForm.create(req.body);
     return res.status(201).json({ success: true, data: form });
   } catch (err) {
+    if (err.name === 'ValidationError') {
+      return res.status(400).json({ success: false, message: Object.values(err.errors).map((e) => e.message).join('; ') });
+    }
     console.error(err);
     return res.status(500).json({ success: false, message: 'Server error while creating form.' });
   }
