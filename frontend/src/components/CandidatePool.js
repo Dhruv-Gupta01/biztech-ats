@@ -8,7 +8,7 @@ import {
   updateCandidate, deleteCandidateRecord, fetchProjects, createProject,
   checkCalendlyStatus
 } from '../api/api';
-import { isFreelanceRoleCode, isFreelanceFilter, effectiveEmploymentType } from '../utils/employment';
+import { isFreelanceRoleCode, isFreelanceFilter, isFreelanceLikeType, effectiveEmploymentType } from '../utils/employment';
 import { getColumnsForType, getOptionsForColumn } from '../utils/columnOptions';
 import { useEmploymentTypes } from '../contexts/EmploymentTypesContext';
 
@@ -368,6 +368,8 @@ function CandidatePool() {
       .then((res) => {
         setCandidates(res.data);
         setLoadError('');
+        // Source dropdown options come from the first (unfiltered) load — avoids a second full fetch.
+        setAllSources((prev) => (prev.length ? prev : [...new Set(res.data.map((c) => c.source).filter(Boolean))].sort()));
         setProfileCandidate((prev) => {
           if (!prev) return prev;
           const updated = res.data.find((c) => c._id === prev._id);
@@ -388,7 +390,6 @@ function CandidatePool() {
   useEffect(loadCandidates, [filters]);
 
   useEffect(() => {
-    fetchCandidates().then((res) => setAllSources([...new Set(res.data.map((c) => c.source).filter(Boolean))].sort())).catch(() => {});
     fetchRoles().then((res) => setRoles(res.data)).catch((err) => console.error('[CandidatePool] fetchRoles failed:', err));
   }, []);
 
@@ -433,7 +434,14 @@ const roleCodes = useMemo(() => roles.map((r) => r.code).sort(), [roles]);
 
 // Freelance coding view activates when either the Employment Type filter is
 // FREELANCE CODING or CONTRACT (as Contractual uses freelance columns) or the selected Role Code starts with F (e.g. F-TYPESCRIPT).
-const freelanceMode = isFreelanceFilter(filters.employmentType, filters.roleCode) || filters.employmentType === 'Contract';
+const selectedRole = roles.find((r) => r.code === filters.roleCode);
+const roleEmpType = selectedRole ? selectedRole.empType : '';
+// With no type/role filter, show the freelance columns when most loaded candidates are freelance-like
+// (e.g. the Coding pipeline import) — otherwise Calendly/NDA/Slack/Project columns never appear.
+const mostlyFreelance = !filters.employmentType && !filters.roleCode && candidates.length > 0 &&
+  candidates.filter((c) => isFreelanceLikeType(effectiveEmploymentType(c))).length > candidates.length / 2;
+const freelanceMode = isFreelanceFilter(filters.employmentType, filters.roleCode) || filters.employmentType === 'Contract' ||
+  (!filters.employmentType && isFreelanceLikeType(roleEmpType)) || mostlyFreelance;
 // Medical hiring view activates when either the Employment Type filter is
 // MEDICAL HIRING or the selected Role Code starts with M (e.g. M-DOCTOR).
 const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.roleCode && filters.roleCode.toUpperCase().startsWith('M'));
@@ -712,7 +720,7 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
           }).map((code) => <option key={code} value={code}>{code}</option>)}</select>
         <select value={filters.statusColumn} onChange={(e) => setFilters({ ...filters, statusColumn: e.target.value, statusColumnValue: '' })}>
           <option value="">All Status</option>
-          {getColumnsForType(filters.employmentType).map((col) => (
+          {getColumnsForType(filters.employmentType || (freelanceMode ? 'Freelance' : medicalMode ? 'Medical Hiring' : '')).map((col) => (
             <option key={col.field} value={col.field}>{col.label}</option>
           ))}
         </select>

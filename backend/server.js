@@ -33,6 +33,8 @@ employmentTypeRegistry.ensureDefaultEmploymentTypes()
   });
 
 app.use(cors());
+// gzip responses — the candidate list is several MB of JSON.
+app.use(require('compression')());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

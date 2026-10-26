@@ -136,6 +136,15 @@ const candidateSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
+// Indexes for the list/filter/sort paths (GET /candidates sorts by createdAt, the
+// dashboard/statistics sort by updatedAt, and the pool filters on these fields).
+candidateSchema.index({ createdAt: -1 });
+candidateSchema.index({ updatedAt: -1 });
+candidateSchema.index({ roleCode: 1, createdAt: -1 });
+candidateSchema.index({ employmentType: 1 });
+candidateSchema.index({ status: 1 });
+candidateSchema.index({ source: 1 });
+
 // Role codes starting with "F" / "M" (etc.) are always tied to the prefix-based
 // employment type registered for that prefix. This keeps employmentType in sync
 // whether the candidate arrives via resume upload, CSV import, the apply form, or
