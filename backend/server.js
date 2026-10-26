@@ -97,3 +97,18 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5004;
 app.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));
+
+// Pre-warm the response cache (see utils/responseCache.js) so the first visitor after a
+// restart doesn't wait ~20s for the full candidate list / statistics. Sequential, so it
+// never builds two large responses at once on the small Render instance.
+if (process.env.WARM_CACHE !== 'false' && process.env.NODE_ENV !== 'test') {
+  setTimeout(async () => {
+    const http = require('http');
+    const warm = (path) => new Promise((resolve) => {
+      http.get({ host: '127.0.0.1', port: PORT, path }, (r) => { r.resume(); r.on('end', resolve); }).on('error', resolve);
+    });
+    for (const path of ['/api/candidates?page=1&limit=100', '/api/dashboard/metrics', '/api/candidates', '/api/statistics']) {
+      await warm(path);
+    }
+  }, 15000);
+}

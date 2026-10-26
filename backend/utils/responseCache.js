@@ -6,7 +6,7 @@
 // attached with `invalidateOnWrite`) empties the cache, and entries also expire
 // after TTL_MS to cover writes made outside this server (scripts, the ETL cron on
 // another instance, direct DB edits).
-const TTL_MS = 2 * 60 * 1000;
+const TTL_MS = 10 * 60 * 1000;
 // Render's free instance has ~256MB of heap and a full candidate list is ~15MB of JSON,
 // so cap the total cached bytes, not just the entry count.
 const MAX_ENTRIES = 12;
