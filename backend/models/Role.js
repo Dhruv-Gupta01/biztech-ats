@@ -36,4 +36,6 @@ RoleSchema.pre('save', function (next) {
   next();
 });
 
+require('../utils/responseCache').invalidateOnWrite(RoleSchema);
+
 module.exports = mongoose.model('Role', RoleSchema);

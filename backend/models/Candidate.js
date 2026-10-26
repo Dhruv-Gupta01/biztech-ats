@@ -174,4 +174,6 @@ function enforcePrefixForRoleCode(doc) {
 }
 candidateSchema.post('init', enforcePrefixForRoleCode);
 
+require('../utils/responseCache').invalidateOnWrite(candidateSchema);
+
 module.exports = mongoose.model('Candidate', candidateSchema);

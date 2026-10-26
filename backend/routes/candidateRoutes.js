@@ -1,4 +1,5 @@
 const express = require('express');
+const { cacheGet } = require('../utils/responseCache');
 const router = express.Router();
 const upload = require('../middleware/upload');
 const uploadCSV = require('../middleware/uploadCSV');
@@ -13,7 +14,7 @@ router.post('/bulk-import-with-role', uploadCSV.single('file'), bulkImportWithRo
 router.post('/apply', uploadMiddleware.single('resume'), applyCandidate);
 router.post('/bulk-upload-resumes', bulkUpload.array('resumes', 50), bulkUploadResumes);
 router.get('/sources', getCandidateSources);
-router.get('/', getCandidates);
+router.get('/', cacheGet, getCandidates);
 router.post('/:id/score', scoreCandidate);
 router.post('/:id/interview-stage', recordInterviewStage);
 router.post('/:id/analyze', analyzeCandidate);

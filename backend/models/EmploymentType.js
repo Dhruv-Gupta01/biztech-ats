@@ -17,4 +17,6 @@ const EmploymentTypeSchema = new mongoose.Schema(
 EmploymentTypeSchema.index({ name: 1, isActive: 1 });
 EmploymentTypeSchema.index({ prefix: 1, isPrefixBased: 1 });
 
+require('../utils/responseCache').invalidateOnWrite(EmploymentTypeSchema);
+
 module.exports = mongoose.model('EmploymentType', EmploymentTypeSchema);
