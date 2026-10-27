@@ -15,8 +15,9 @@
 #   - Engagement: blank = Freelance; "Contract / Freelance" (either order) = Freelance/Contract
 #   - roleCode is always CODING (this sheet is coding-only); employment type is independent of it
 #   - Total YOE ranges -> midpoint (3-5 -> 4, 5-7 -> 6, 7-10 -> 8.5, 10+ -> 10); blank -> 0
-#   - Calendly "booked" = Slot Booked is Yes (Invite Date is when the invite went out, not the slot)
-#   - ignored: form columns, Client Batch, IDV, Existing-Candidate Re-interview, derived/internal
+#   - Calendly link sent = Invite Sent Via (link owner) has a value (or a slot is booked); "booked" = Slot Booked is Yes
+#   - project = Prolific when IDV has a value; project status from IDV (DONE=Complete, PENDING=In Pipeline, BANNED/DISQUALIFIED=Not Active)
+#   - ignored: form columns, Client Batch, Existing-Candidate Re-interview, derived/internal
 #     columns (Highest Stage*, First/Last Seen, # Source Rows, Found In, In Previous Master?),
 #     dirty Fit % / Resume Score and the form-answer columns (Linux, Docker, ...)
 # The original Current Status and every non-field column we keep land in generalRemarks,
@@ -80,6 +81,9 @@ PAPERWORK_MAP = {
     'Slack pending': (None, None, 'Not Joined'),
 }
 
+# IDV value -> ATS project status (Prolific)
+IDV_STATUS_MAP = {'DONE': 'Complete', 'PENDING': 'In Pipeline', 'BANNED': 'Not Active', 'DISQUALIFIED': 'Not Active'}
+
 BOOTCAMP_STATUS_MAP = {'Passed': 'Pass', 'Joined – no pass recorded': 'Active'}
 
 
@@ -116,8 +120,11 @@ def build(row, ix):
 
     resume = g('Resume Link')
     current_status = g('Current Status')
-    invite_sent = g('Interview Invite Sent') == 'Yes'
     slot_booked = g('Slot Booked') == 'Yes'
+    # Calendly link sent = "Invite Sent Via (link owner)" has a value (a booked slot also
+    # implies the link went out, even where the owner wasn't recorded).
+    invite_sent = bool(g('Invite Sent Via (link owner)')) or slot_booked
+    idv = g('IDV').upper()
 
     nda, onboarding, slack = PAPERWORK_MAP.get(g('Paperwork'), (None, None, None))
     if g('Slack') == 'Yes':
@@ -137,7 +144,7 @@ def build(row, ix):
         ('Interviewer', 'Interviewer'), ('Interview Date', 'Interview Date'),
         ('External Assessment Sent', 'External Assessment Sent'),
         ('Round 2 (DSA)', 'Round 2 (DSA) Result'), ('Bootcamp Batch', 'Bootcamp Batch'),
-        ('Bootcamp Result', 'Bootcamp Result'),
+        ('Bootcamp Result', 'Bootcamp Result'), ('IDV', 'IDV'),
         ('Client Assessment', 'Client Assessment Result'), ('Follow-up', 'Follow-up Notes'),
         ('Previous Master ID', 'Previous Master ID'), ('Previous Stage', 'Previous Stage'),
         ('Previous Projects', 'Previous Projects'),
@@ -171,6 +178,9 @@ def build(row, ix):
         'screeningInterview': screening,
         'calendlyLinkSent': 'Sent' if invite_sent else 'Not Sent',
         'calendlyLinkStatus': 'Booked' if slot_booked else ('Not Booked' if invite_sent else None),
+        # IDV filled in = Prolific project; the IDV value is that project's status.
+        'project': 'Prolific' if idv else None,
+        'projectStatus': IDV_STATUS_MAP.get(idv) if idv else None,
         'ndaIca': nda,
         'slackStatus': slack,
         'bootcampAttempts': f'Attempt {attempts}' if attempts in ('1', '2', '3') else None,

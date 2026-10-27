@@ -899,8 +899,7 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
                                 { field: 'slackStatus', options: SLACK_STATUS_OPTIONS, label: 'Slack' },
                                 { field: 'bootcampAttempts', options: BOOTCAMP_ATTEMPTS_OPTIONS, label: 'Bootcamp Attempts' },
                                 { field: 'bootcampStatus', options: BOOTCAMP_STATUS_OPTIONS, label: 'Bootcamp Status' },
-                                { field: 'onboarding', options: ONBOARDING_OPTIONS, label: 'Onboarding' },
-                                { field: 'projectStatus', options: PROJECT_STATUS_OPTIONS, label: 'Project Status' }
+                                { field: 'onboarding', options: ONBOARDING_OPTIONS, label: 'Onboarding' }
                               ].map(({ field, options }) => (
                                 <td key={field}>
                                   <select
@@ -930,7 +929,19 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
                                   style={{ padding: '2px 6px', fontSize: 11, borderRadius: 4, border: '1px solid var(--border)', minWidth: 110 }}
                                 >
                                   <option value="">—</option>
+                                  {/* keep a value that isn't in the project list (e.g. imported) selectable */}
+                                  {c.project && !projects.includes(c.project) && <option value={c.project}>{c.project}</option>}
                                   {projects.map((p) => <option key={p} value={p}>{p}</option>)}
+                                </select>
+                              </td>
+                              <td>
+                                <select
+                                  value={c.projectStatus || ''}
+                                  onChange={(e) => saveFreelanceField(c._id, 'projectStatus', e.target.value)}
+                                  style={{ padding: '2px 6px', fontSize: 11, borderRadius: 4, border: '1px solid var(--border)', minWidth: 110 }}
+                                >
+                                  <option value="">—</option>
+                                  {PROJECT_STATUS_OPTIONS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
                                 </select>
                               </td>
                             </>
