@@ -15,15 +15,15 @@ import { useEmploymentTypes } from '../contexts/EmploymentTypesContext';
 const fallbackTypeLabel = (t) => (t === 'Contract' ? 'Contractual' : t === 'Part-Time' ? 'Part Time' : t === 'FREELANCE CODING' ? 'Freelance Coding' : t === 'Medical Hiring' ? 'Medical Hiring' : (t === 'Freelance' || t === 'Freelance/Contract') ? t : 'Full Time');
 const money = (n) => (n ? `₹${(n / 100000).toFixed(1)}L` : '—');
 
-const SCREENING_INTERVIEW_OPTIONS = ['Pass', 'Fail', 'Not Appeared', 'Rescheduled', 'Not interested', 'Referred to another position'];
+const SCREENING_INTERVIEW_OPTIONS = ['Pass', 'Fail', 'Not Appeared', 'Rescheduled', 'Not interested', 'Referred to another position', 'Invited – not booked', 'Booked – no result yet', 'Appeared – result not recorded'];
 const CALENDLY_SENT_OPTIONS = ['Sent', 'Not Sent'];
 const CALENDLY_STATUS_OPTIONS = ['Booked', 'Not Booked'];
 const NDA_ICA_OPTIONS = ['Sent', 'Not Sent', 'Signed', 'Not Signed', 'Doubt', 'Not Interested'];
 const SLACK_STATUS_OPTIONS = ['Joined', 'Not Joined', 'Not Interested'];
 const BOOTCAMP_ATTEMPTS_OPTIONS = ['Attempt 1', 'Attempt 2', 'Attempt 3'];
-const BOOTCAMP_STATUS_OPTIONS = ['Pass', 'Fail', 'Full Fail', 'Not Active', 'Active'];
+const BOOTCAMP_STATUS_OPTIONS = ['Pass', 'Fail', 'Full Fail', 'Not Active', 'Active', 'Direct to client'];
 const ONBOARDING_OPTIONS = ['Sent', 'Not Sent', 'Not Interested', 'Done'];
-const PROJECT_STATUS_OPTIONS = ['On Hold', 'Complete', 'Not Active', 'In Pipeline'];
+const PROJECT_STATUS_OPTIONS = ['On Hold', 'Complete', 'Not Active', 'In Pipeline', 'Banned / Disqualified'];
 const DEFAULT_PROJECTS = ['Terminus', 'Snorkle', 'Alegion'];
 
 const MEDICAL_RESUME_ANALYZER_STATUS_OPTIONS = ['Selected', 'Not selected'];

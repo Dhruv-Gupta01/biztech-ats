@@ -16,7 +16,7 @@
 #   - roleCode is always CODING (this sheet is coding-only); employment type is independent of it
 #   - Total YOE ranges -> midpoint (3-5 -> 4, 5-7 -> 6, 7-10 -> 8.5, 10+ -> 10); blank -> 0
 #   - Calendly link sent = Invite Sent Via (link owner) has a value (or a slot is booked); "booked" = Slot Booked is Yes
-#   - project = Prolific when IDV has a value; project status from IDV (DONE=Complete, PENDING=In Pipeline, BANNED/DISQUALIFIED=Not Active)
+#   - project = Prolific when IDV has a value; project status from IDV (DONE=Complete, PENDING=In Pipeline, BANNED/DISQUALIFIED=Banned / Disqualified)
 #   - ignored: form columns, Client Batch, Existing-Candidate Re-interview, derived/internal
 #     columns (Highest Stage*, First/Last Seen, # Source Rows, Found In, In Previous Master?),
 #     dirty Fit % / Resume Score and the form-answer columns (Linux, Docker, ...)
@@ -69,6 +69,9 @@ SCREENING_MAP = {
     'Failed': 'Fail',
     'Did not appear': 'Not Appeared',
     'Re-attempt / rescheduled': 'Rescheduled',
+    'Invited – not booked': 'Invited – not booked',
+    'Booked – no result yet': 'Booked – no result yet',
+    'Appeared – result not recorded': 'Appeared – result not recorded',
 }
 
 # Paperwork -> (ndaIca, onboarding, slackStatus)
@@ -82,9 +85,9 @@ PAPERWORK_MAP = {
 }
 
 # IDV value -> ATS project status (Prolific)
-IDV_STATUS_MAP = {'DONE': 'Complete', 'PENDING': 'In Pipeline', 'BANNED': 'Not Active', 'DISQUALIFIED': 'Not Active'}
+IDV_STATUS_MAP = {'DONE': 'Complete', 'PENDING': 'In Pipeline', 'BANNED': 'Banned / Disqualified', 'DISQUALIFIED': 'Banned / Disqualified'}
 
-BOOTCAMP_STATUS_MAP = {'Passed': 'Pass', 'Joined – no pass recorded': 'Active'}
+BOOTCAMP_STATUS_MAP = {'Passed': 'Pass', 'Joined – no pass recorded': 'Active', 'Direct to client (existing / external)': 'Direct to client'}
 
 
 def text(v):

@@ -29,16 +29,16 @@ const candidateSchema = new mongoose.Schema({
   // defaulting to '' made every save of an existing document fail validation.
   // Unset means "not yet chosen" — Mongoose skips enum validation for
   // undefined/null on these optional paths, and the UI stores null for "—".
-  screeningInterview: { type: String, enum: ['Pass', 'Fail', 'Not Appeared', 'Rescheduled', 'Not interested', 'Referred to another position'], default: null },
+  screeningInterview: { type: String, enum: ['Pass', 'Fail', 'Not Appeared', 'Rescheduled', 'Not interested', 'Referred to another position', 'Invited – not booked', 'Booked – no result yet', 'Appeared – result not recorded'], default: null },
   calendlyLinkSent: { type: String, enum: ['Sent', 'Not Sent'], default: null },
   calendlyLinkStatus: { type: String, enum: ['Booked', 'Not Booked'], default: null },
   ndaIca: { type: String, enum: ['Sent', 'Not Sent', 'Signed', 'Not Signed', 'Doubt', 'Not Interested'], default: null },
   slackStatus: { type: String, enum: ['Joined', 'Not Joined', 'Not Interested'], default: null },
   bootcampAttempts: { type: String, enum: ['Attempt 1', 'Attempt 2', 'Attempt 3'], default: null },
-  bootcampStatus: { type: String, enum: ['Pass', 'Fail', 'Full Fail', 'Not Active', 'Active'], default: null },
+  bootcampStatus: { type: String, enum: ['Pass', 'Fail', 'Full Fail', 'Not Active', 'Active', 'Direct to client'], default: null },
   onboarding: { type: String, enum: ['Sent', 'Not Sent', 'Not Interested', 'Done'], default: null },
   project: { type: String, default: null },
-  projectStatus: { type: String, enum: ['On Hold', 'Complete', 'Not Active', 'In Pipeline'], default: null },
+  projectStatus: { type: String, enum: ['On Hold', 'Complete', 'Not Active', 'In Pipeline', 'Banned / Disqualified'], default: null },
 
   // MEDICAL HIRING specific fields.
   resumeAnalyzerStatus: { type: String, enum: ['Selected', 'Not selected'], default: null },

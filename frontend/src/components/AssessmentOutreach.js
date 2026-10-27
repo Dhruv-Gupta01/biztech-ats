@@ -43,15 +43,15 @@ const STATUS_OPTIONS = [
   'Not interested'
 ];
 
-const SCREENING_INTERVIEW_OPTIONS = ['Pass', 'Fail', 'Not Appeared', 'Rescheduled', 'Not interested', 'Referred to another position'];
+const SCREENING_INTERVIEW_OPTIONS = ['Pass', 'Fail', 'Not Appeared', 'Rescheduled', 'Not interested', 'Referred to another position', 'Invited – not booked', 'Booked – no result yet', 'Appeared – result not recorded'];
 const CALENDLY_SENT_OPTIONS = ['Sent', 'Not Sent'];
 const CALENDLY_STATUS_OPTIONS = ['Booked', 'Not Booked'];
 const NDA_ICA_OPTIONS = ['Sent', 'Not Sent', 'Signed', 'Not Signed', 'Doubt', 'Not Interested'];
 const SLACK_STATUS_OPTIONS = ['Joined', 'Not Joined', 'Not Interested'];
 const BOOTCAMP_ATTEMPTS_OPTIONS = ['Attempt 1', 'Attempt 2', 'Attempt 3'];
-const BOOTCAMP_STATUS_OPTIONS = ['Pass', 'Fail', 'Full Fail', 'Not Active', 'Active'];
+const BOOTCAMP_STATUS_OPTIONS = ['Pass', 'Fail', 'Full Fail', 'Not Active', 'Active', 'Direct to client'];
 const ONBOARDING_OPTIONS = ['Sent', 'Not Sent', 'Not Interested', 'Done'];
-const PROJECT_STATUS_OPTIONS = ['On Hold', 'Complete', 'Not Active', 'In Pipeline'];
+const PROJECT_STATUS_OPTIONS = ['On Hold', 'Complete', 'Not Active', 'In Pipeline', 'Banned / Disqualified'];
 
 // One entry per FREELANCE CODING filter, in display order. `key` matches the
 // field on freelanceFilters so the UI, the filter logic and the reset all stay

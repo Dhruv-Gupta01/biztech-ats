@@ -1,11 +1,11 @@
-// One-off follow-up to importHiringPipeline.js: re-applies ONLY the Calendly link sent /
-// Calendly status / project / project status mapping (see hiringPipelineToJson.py) to
-// candidates that are already in the ATS, matched by email. Nothing else on the record
+// One-off follow-up to importHiringPipeline.js: re-applies ONLY the project / project
+// status, screening interview and bootcamp status mapping (see hiringPipelineToJson.py)
+// to candidates that are already in the ATS, matched by email. Nothing else on the record
 // is touched, and candidates not in the ATS are ignored.
 //
 // DRY RUN by default (no DB connection). Pass --commit to write; it also makes sure the
-// "Prolific" project exists. Project / project status are only set for rows that have an
-// IDV value, so manual project edits on other candidates are left alone.
+// "Prolific" project exists. Each field is only set where the sheet has a mapped value,
+// so manual edits on other candidates are left alone.
 //
 // Usage:
 //   node scripts/updateHiringPipelineFields.js /path/outside/repo/candidates.json
@@ -32,14 +32,17 @@ async function run() {
 
   const docs = JSON.parse(fs.readFileSync(file, 'utf-8'));
   const ops = docs.map((d) => {
-    const set = { calendlyLinkSent: d.calendlyLinkSent, calendlyLinkStatus: d.calendlyLinkStatus };
+    const set = {};
     if (d.project) {
       set.project = d.project;
       set.projectStatus = d.projectStatus;
     }
+    if (d.screeningInterview) set.screeningInterview = d.screeningInterview;
+    if (d.bootcampStatus) set.bootcampStatus = d.bootcampStatus;
+    if (!Object.keys(set).length) return null;
     return { updateOne: { filter: { email: d.email }, update: { $set: set } } };
-  });
-  console.log(`Read ${docs.length} rows; ${docs.filter((d) => d.project).length} with a project (IDV)`);
+  }).filter(Boolean);
+  console.log(`Read ${docs.length} rows; ${docs.filter((d) => d.project).length} with a project (IDV), ${docs.filter((d) => d.screeningInterview).length} with a screening result, ${docs.filter((d) => d.bootcampStatus).length} with a bootcamp status`);
 
   if (!commit) {
     console.log('DRY RUN — nothing written. Re-run with --commit to update.');

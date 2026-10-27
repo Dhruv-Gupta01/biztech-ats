@@ -152,16 +152,16 @@ Routing is manual (`views[view] || Dashboard`), not a router library. `api.js` c
 | resumeUrl | String | PDF served via GET /api/candidates/:id/resume |
 | resumeData | Buffer | raw PDF bytes (resume upload path) |
 | resumeText | String | parsed text |
-| screeningInterview | enum [Pass,Fail,Not Appeared,Rescheduled,Not interested,Referred to another position], default null | FREELANCE CODING/Contract columns |
+| screeningInterview | enum [Pass,Fail,Not Appeared,Rescheduled,Not interested,Referred to another position,Invited – not booked,Booked – no result yet,Appeared – result not recorded], default null | FREELANCE CODING/Contract columns |
 | calendlyLinkSent | enum [Sent,Not Sent], default null | |
 | calendlyLinkStatus | enum [Booked,Not Booked], default null | |
 | ndaIca | enum [Sent,Not Sent,Signed,Not Signed,Doubt,Not Interested], default null | |
 | slackStatus | enum [Joined,Not Joined,Not Interested], default null | |
 | bootcampAttempts | enum [Attempt 1,Attempt 2,Attempt 3], default null | |
-| bootcampStatus | enum [Pass,Fail,Full Fail,Not Active,Active], default null | |
+| bootcampStatus | enum [Pass,Fail,Full Fail,Not Active,Active,Direct to client], default null | |
 | onboarding | enum [Sent,Not Sent,Not Interested,Done], default null | |
 | project | String, default null | freelance project name |
-| projectStatus | enum [On Hold,Complete,Not Active,In Pipeline], default null | |
+| projectStatus | enum [On Hold,Complete,Not Active,In Pipeline,Banned / Disqualified], default null | |
 | resumeAnalyzerStatus | enum [Selected,Not selected], default null | MEDICAL HIRING columns |
 | medicalAssessments | enum [Sent,Not Sent], default null | |
 | medicalAssessmentsSubmission | enum [Received,Not received,Not interested], default null | |
