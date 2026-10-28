@@ -37,6 +37,17 @@ const candidateSchema = new mongoose.Schema({
   bootcampAttempts: { type: String, enum: ['Attempt 1', 'Attempt 2', 'Attempt 3'], default: null },
   bootcampStatus: { type: String, enum: ['Pass', 'Fail', 'Full Fail', 'Not Active', 'Active', 'Direct to client'], default: null },
   onboarding: { type: String, enum: ['Sent', 'Not Sent', 'Not Interested', 'Done'], default: null },
+  // Bootcamp cohorts this candidate was listed in. A person can be in several batches,
+  // each with its own Joined / Not joined (null = the sheet left it blank).
+  bootcampBatches: {
+    type: [{
+      _id: false,
+      batch: { type: String, required: true, trim: true },
+      joined: { type: String, enum: ['Joined', 'Not joined', null], default: null },
+      note: { type: String, default: '' }
+    }],
+    default: []
+  },
   project: { type: String, default: null },
   projectStatus: { type: String, enum: ['On Hold', 'Complete', 'Not Active', 'In Pipeline', 'Banned / Disqualified'], default: null },
 
@@ -144,6 +155,7 @@ candidateSchema.index({ roleCode: 1, createdAt: -1 });
 candidateSchema.index({ employmentType: 1 });
 candidateSchema.index({ status: 1 });
 candidateSchema.index({ source: 1 });
+candidateSchema.index({ 'bootcampBatches.batch': 1 });
 
 // Role codes starting with "F" / "M" (etc.) are always tied to the prefix-based
 // employment type registered for that prefix. This keeps employmentType in sync

@@ -302,6 +302,10 @@ exports.getCandidates = async (req, res) => {
           ? { $eq: ['$$this.v', optionValue] }
           : { $and: [{ $ne: ['$$this.v', null] }, { $ne: ['$$this.v', ''] }, { $ne: ['$$this.v', 'Not set'] }] };
         filter.$expr = { $gt: [{ $size: { $filter: { input: roundVals, cond } } }, 0] };
+      } else if (options === 'bootcampBatch') {
+        // "All" = listed in any batch; otherwise a specific batch label.
+        if (optionValue) filter['bootcampBatches.batch'] = optionValue;
+        else filter['bootcampBatches.0'] = { $exists: true };
       } else if (optionValue && optionValue !== '') {
         filter[options] = optionValue;
       } else {
@@ -361,6 +365,23 @@ exports.getCandidateSources = async (req, res) => {
   } catch (err) {
     console.error(err);
     return res.status(500).json({ success: false, message: 'Server error while fetching sources.' });
+  }
+};
+
+// GET /api/candidates/bootcamp-batches — batch labels with candidate counts, in batch order.
+exports.getBootcampBatches = async (req, res) => {
+  try {
+    const rows = await Candidate.aggregate([
+      { $unwind: '$bootcampBatches' },
+      { $group: { _id: '$bootcampBatches.batch', count: { $sum: 1 } } }
+    ]);
+    // Labels look like "B_12_08/09": order by the batch number, not alphabetically.
+    const num = (b) => parseInt(String(b).replace(/^B_/, ''), 10) || 0;
+    const data = rows.map((r) => ({ batch: r._id, count: r.count })).sort((a, b) => num(a.batch) - num(b.batch));
+    return res.status(200).json({ success: true, data });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Server error while fetching bootcamp batches.' });
   }
 };
 

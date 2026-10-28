@@ -3,7 +3,7 @@ import StatusBadge from './StatusBadge';
 import CandidateProfileModal from './CandidateProfileModal';
 import { useAuth } from '../auth/AuthContext';
 import {
-  fetchCandidates, fetchCandidateIds, fetchCandidateSources, bulkImportCandidates, fetchSlackMappings, assignCandidatesToSlack,
+  fetchCandidates, fetchCandidateIds, fetchCandidateSources, fetchBootcampBatches, bulkImportCandidates, fetchSlackMappings, assignCandidatesToSlack,
   fetchRoles, fetchFormSyncStatus, runFormSyncNow, analyzeCandidatesBulk,
   updateCandidate, deleteCandidateRecord, fetchProjects, createProject,
   checkCalendlyStatus
@@ -80,6 +80,7 @@ function CandidatePool() {
   const { employmentTypes, typeLabel } = useEmploymentTypes();
   const [candidates, setCandidates] = useState([]);
   const [allSources, setAllSources] = useState([]);
+  const [bootcampBatches, setBootcampBatches] = useState([]);
   const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -425,6 +426,7 @@ function CandidatePool() {
   useEffect(() => {
     fetchRoles().then((res) => setRoles(res.data)).catch((err) => console.error('[CandidatePool] fetchRoles failed:', err));
     fetchCandidateSources().then((res) => setAllSources(res.data || [])).catch(() => {});
+    fetchBootcampBatches().then((res) => setBootcampBatches(res.data || [])).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -743,8 +745,17 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
           {getColumnsForType(filters.employmentType || (freelanceMode ? 'Freelance' : medicalMode ? 'Medical Hiring' : '')).map((col) => (
             <option key={col.field} value={col.field}>{col.label}</option>
           ))}
+          {bootcampBatches.length > 0 && <option value="bootcampBatch">Bootcamp Batches</option>}
         </select>
-        {filters.statusColumn && (
+        {filters.statusColumn === 'bootcampBatch' && (
+          <select value={filters.statusColumnValue} onChange={(e) => setFilters({ ...filters, statusColumnValue: e.target.value })}>
+            <option value="">All</option>
+            {bootcampBatches.map((b) => (
+              <option key={b.batch} value={b.batch}>{b.batch} ({b.count})</option>
+            ))}
+          </select>
+        )}
+        {filters.statusColumn && filters.statusColumn !== 'bootcampBatch' && (
           <select value={filters.statusColumnValue} onChange={(e) => setFilters({ ...filters, statusColumnValue: e.target.value })}>
             <option value="">Options</option>
             {getOptionsForColumn(filters.statusColumn, candidates).map((opt) => (
@@ -877,6 +888,14 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
                         <td className="name-cell">
                           <button className="name-link" onClick={() => setProfileCandidate(c)}><strong>{c.fullName}</strong></button>
                           <br /><small>{c.email}</small>
+                          {filters.statusColumn === 'bootcampBatch' && (c.bootcampBatches || []).length > 0 && (
+                            <><br /><small style={{ color: 'var(--text-500)' }}>
+                              {(c.bootcampBatches || [])
+                                .filter((b) => !filters.statusColumnValue || b.batch === filters.statusColumnValue)
+                                .map((b) => `${b.batch}: ${b.joined || '—'}${b.note ? ` (${b.note})` : ''}`)
+                                .join(' · ')}
+                            </small></>
+                          )}
                         </td>
                         <td>{c.roleCode}</td>
 {freelanceMode ? (

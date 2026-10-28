@@ -160,6 +160,7 @@ Routing is manual (`views[view] || Dashboard`), not a router library. `api.js` c
 | bootcampAttempts | enum [Attempt 1,Attempt 2,Attempt 3], default null | |
 | bootcampStatus | enum [Pass,Fail,Full Fail,Not Active,Active,Direct to client], default null | |
 | onboarding | enum [Sent,Not Sent,Not Interested,Done], default null | |
+| bootcampBatches | [{batch, joined(Joined/Not joined/null), note}], default [] | bootcamp cohorts from the batch sheet; a person can be in several |
 | project | String, default null | freelance project name |
 | projectStatus | enum [On Hold,Complete,Not Active,In Pipeline,Banned / Disqualified], default null | |
 | resumeAnalyzerStatus | enum [Selected,Not selected], default null | MEDICAL HIRING columns |
@@ -257,6 +258,7 @@ All base paths mount under `/api`. Responses are `{ success, message, data? }`.
 | POST | `/api/candidates/bulk-import-with-role` | CSV `file` + `roleCode` body |
 | POST | `/api/candidates/apply` | multipart `resume` (candidate application) |
 | POST | `/api/candidates/bulk-upload-resumes` | `resumes[]` (≤50 PDFs) + `roleCode` |
+| GET | `/api/candidates/bootcamp-batches` | batch labels with candidate counts (feeds the Bootcamp Batches filter; `options=bootcampBatch&optionValue=<batch>` on the list filters by batch) |
 | GET | `/api/candidates` | query: roleCode, status, employmentType, source, minExperience, maxExperience, minSuitability, screeningInterview, calendlyLinkSent, calendlyLinkStatus, ndaIca, slackStatus, bootcampAttempts, bootcampStatus, onboarding, project, projectStatus, **options** (statusColumn field), **optionValue** (statusColumnValue) |
 | POST | `/api/candidates/:id/score` | `{skillScore, experienceScore}` |
 | POST | `/api/candidates/:id/interview-stage` | `{interviewer, rating, feedback}` |

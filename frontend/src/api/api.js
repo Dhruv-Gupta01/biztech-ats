@@ -53,6 +53,10 @@ export async function fetchCandidateSources() {
   return request(`${BASE_URL}/candidates/sources`);
 }
 
+export async function fetchBootcampBatches() {
+  return request(`${BASE_URL}/candidates/bootcamp-batches`);
+}
+
 export async function fetchCandidates(filters = {}) {
   const mapped = { ...filters };
   if (mapped.column) {
