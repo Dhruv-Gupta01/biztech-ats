@@ -3,7 +3,7 @@ import StatusBadge from './StatusBadge';
 import CandidateProfileModal from './CandidateProfileModal';
 import { useAuth } from '../auth/AuthContext';
 import {
-  fetchCandidates, fetchCandidateIds, fetchCandidateSources, fetchBootcampBatches, bulkImportCandidates, fetchSlackMappings, assignCandidatesToSlack,
+  fetchCandidates, fetchCandidateIds, fetchCandidateSources, fetchBootcampBatches, assignBootcampBatch, removeFromBootcampBatch, bulkImportCandidates, fetchSlackMappings, assignCandidatesToSlack,
   fetchRoles, fetchFormSyncStatus, runFormSyncNow, analyzeCandidatesBulk,
   updateCandidate, deleteCandidateRecord, fetchProjects, createProject,
   checkCalendlyStatus
@@ -81,6 +81,13 @@ function CandidatePool() {
   const [candidates, setCandidates] = useState([]);
   const [allSources, setAllSources] = useState([]);
   const [bootcampBatches, setBootcampBatches] = useState([]);
+  const [batchTarget, setBatchTarget] = useState('');       // an existing batch label, or '__new__'
+  const [newBatchName, setNewBatchName] = useState('');
+  const [batchJoined, setBatchJoined] = useState('');
+  const [batchBusy, setBatchBusy] = useState(false);
+  const [batchResult, setBatchResult] = useState(null);
+  const [showAddPeople, setShowAddPeople] = useState(false);
+  const [newPeopleText, setNewPeopleText] = useState('');
   const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -571,6 +578,83 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
     }
   };
 
+  // Batches are just labels on candidates, so "creating" one = adding the first person to it.
+  const suggestNextBatch = () => {
+    const max = bootcampBatches.reduce((m, b) => {
+      const n = parseInt(String(b.batch).replace(/^B_/, ''), 10);
+      return Number.isNaN(n) ? m : Math.max(m, n);
+    }, 0);
+    return `B_${max + 1}`;
+  };
+
+  const runBatchAssign = async (extra) => {
+    const batch = batchTarget === '__new__' ? newBatchName.trim() : batchTarget;
+    if (!batch) {
+      setBatchResult({ ok: false, message: 'Pick a batch, or choose "New batch…" and type its name.' });
+      return false;
+    }
+    setBatchBusy(true);
+    setBatchResult(null);
+    try {
+      const res = await assignBootcampBatch({ batch, joined: batchJoined || undefined, ...extra });
+      const skipped = res.data.skipped || [];
+      setBatchResult({ ok: true, message: res.message + (skipped.length ? ` Skipped: ${skipped.map((x) => `${x.who} (${x.reason})`).join(', ')}.` : '') });
+      fetchBootcampBatches().then((r) => setBootcampBatches(r.data || [])).catch(() => {});
+      if (batchTarget === '__new__') { setBatchTarget(batch); setNewBatchName(''); }
+      loadCandidates();
+      return true;
+    } catch (err) {
+      setBatchResult({ ok: false, message: err.message });
+      return false;
+    } finally {
+      setBatchBusy(false);
+    }
+  };
+
+  const addSelectedToBatch = async () => {
+    if (selectedIds.length === 0) return;
+    if (await runBatchAssign({ candidateIds: selectedIds })) setSelectedIds([]);
+  };
+
+  // One person per line: "Name, email, phone" (phone optional; commas, tabs or | all work).
+  const parseNewPeople = (text) => text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).map((line) => {
+    const m = line.match(/[^\s,;|]+@[^\s,;|]+\.[^\s,;|]+/);
+    if (!m) return { fullName: line, email: '' };
+    return {
+      fullName: line.slice(0, m.index).replace(/[,;|\s]+$/, '').trim(),
+      email: m[0],
+      phone: line.slice(m.index + m[0].length).replace(/^[,;|\s]+/, '').split(/[,;|]/)[0].trim()
+    };
+  });
+
+  const addNewPeopleToBatch = async () => {
+    const people = parseNewPeople(newPeopleText);
+    if (people.length === 0) {
+      setBatchResult({ ok: false, message: 'Enter at least one candidate (Name, email, phone).' });
+      return;
+    }
+    if (await runBatchAssign({ candidates: people })) setNewPeopleText('');
+  };
+
+  const removeSelectedFromBatch = async () => {
+    const batch = filters.statusColumnValue;
+    if (!batch || selectedIds.length === 0) return;
+    if (!window.confirm(`Remove ${selectedIds.length} selected candidate(s) from ${batch}? They stay in the ATS.`)) return;
+    setBatchBusy(true);
+    setBatchResult(null);
+    try {
+      const res = await removeFromBootcampBatch(batch, selectedIds);
+      setBatchResult({ ok: true, message: res.message });
+      setSelectedIds([]);
+      fetchBootcampBatches().then((r) => setBootcampBatches(r.data || [])).catch(() => {});
+      loadCandidates();
+    } catch (err) {
+      setBatchResult({ ok: false, message: err.message });
+    } finally {
+      setBatchBusy(false);
+    }
+  };
+
   const handleDeleteSelected = async () => {
     if (!selectedIds.length) return;
     const count = selectedIds.length;
@@ -812,6 +896,63 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
           {formSyncing ? 'Syncing...' : '↻ Sync Form Responses'}
         </button>
       </div>
+
+      <div className="filters-row" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 13, fontWeight: 600 }}>Bootcamp batch</span>
+        <select
+          value={batchTarget}
+          onChange={(e) => {
+            setBatchTarget(e.target.value);
+            if (e.target.value === '__new__' && !newBatchName) setNewBatchName(suggestNextBatch());
+          }}
+        >
+          <option value="">Select batch…</option>
+          {bootcampBatches.map((b) => <option key={b.batch} value={b.batch}>{b.batch} ({b.count})</option>)}
+          <option value="__new__">➕ New batch…</option>
+        </select>
+        {batchTarget === '__new__' && (
+          <input placeholder="New batch name, e.g. B_19_28/10" value={newBatchName} maxLength={40} onChange={(e) => setNewBatchName(e.target.value)} style={{ width: 200 }} />
+        )}
+        <select value={batchJoined} onChange={(e) => setBatchJoined(e.target.value)} title="Joined status to record for them in this batch">
+          <option value="">Joined status: —</option>
+          <option value="Joined">Joined</option>
+          <option value="Not joined">Not joined</option>
+        </select>
+        <button className="btn-primary" onClick={addSelectedToBatch} disabled={batchBusy || selectedIds.length === 0 || !batchTarget}>
+          {batchBusy ? 'Working...' : `Add selected (${selectedIds.length}) to batch`}
+        </button>
+        <button className="btn-secondary" onClick={() => setShowAddPeople((v) => !v)}>
+          {showAddPeople ? 'Hide new candidates' : '+ Add new candidates'}
+        </button>
+        {filters.statusColumn === 'bootcampBatch' && filters.statusColumnValue && (
+          <button className="btn-secondary" onClick={removeSelectedFromBatch} disabled={batchBusy || selectedIds.length === 0} style={{ color: 'var(--red)', borderColor: 'var(--red)' }}>
+            Remove selected from {filters.statusColumnValue}
+          </button>
+        )}
+        {batchResult && (
+          <span style={{ fontSize: 12, color: batchResult.ok ? 'var(--green)' : 'var(--red)' }}>{batchResult.message}</span>
+        )}
+      </div>
+      {showAddPeople && (
+        <div className="card" style={{ padding: 12, marginBottom: 12 }}>
+          <div style={{ fontSize: 13, marginBottom: 6 }}>
+            One candidate per line: <code>Name, email, phone</code> (phone is optional). People already in the ATS are just added to the batch; new ones are created
+            (role CODING, Freelance, source Bootcamp). Uses the batch and Joined status chosen above.
+          </div>
+          <textarea
+            rows={6}
+            value={newPeopleText}
+            onChange={(e) => setNewPeopleText(e.target.value)}
+            placeholder={'Asha Rao, asha.rao@example.com, 9876543210\nRohit Sen, rohit.sen@example.com'}
+            style={{ width: '100%', fontFamily: 'inherit', fontSize: 13 }}
+          />
+          <div style={{ marginTop: 8 }}>
+            <button className="btn-primary" onClick={addNewPeopleToBatch} disabled={batchBusy || !batchTarget || !newPeopleText.trim()}>
+              {batchBusy ? 'Adding...' : 'Add to batch'}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
         {loading ? (<p style={{ padding: 20, color: 'var(--text-500)' }}>Loading candidates...</p>) : (

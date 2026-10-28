@@ -57,6 +57,23 @@ export async function fetchBootcampBatches() {
   return request(`${BASE_URL}/candidates/bootcamp-batches`);
 }
 
+// payload: { batch, joined?, note?, candidateIds?, candidates?: [{ fullName, email, phone }] }
+export async function assignBootcampBatch(payload) {
+  return request(`${BASE_URL}/candidates/bootcamp-batches/assign`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function removeFromBootcampBatch(batch, candidateIds) {
+  return request(`${BASE_URL}/candidates/bootcamp-batches/remove`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ batch, candidateIds })
+  });
+}
+
 export async function fetchCandidates(filters = {}) {
   const mapped = { ...filters };
   if (mapped.column) {

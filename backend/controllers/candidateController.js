@@ -3,6 +3,7 @@ const Role = require('../models/Role');
 const { buildHistoryEntries } = require('../utils/history');
 const registry = require('../utils/employmentRegistry');
 const { parseResumeText } = require('../utils/resumeParser');
+const { clear: clearResponseCache } = require('../utils/responseCache');
 
 const STOP_WORDS = new Set([
   'the','and','for','with','that','this','have','from','they','will','would','there','their','what','about','which',
@@ -375,13 +376,129 @@ exports.getBootcampBatches = async (req, res) => {
       { $unwind: '$bootcampBatches' },
       { $group: { _id: '$bootcampBatches.batch', count: { $sum: 1 } } }
     ]);
-    // Labels look like "B_12_08/09": order by the batch number, not alphabetically.
-    const num = (b) => parseInt(String(b).replace(/^B_/, ''), 10) || 0;
+    // Labels look like "B_12_08/09": order by the batch number, not alphabetically;
+    // names without a number go last.
+    const num = (b) => { const n = parseInt(String(b).replace(/^B_/, ''), 10); return Number.isNaN(n) ? 9999 : n; };
     const data = rows.map((r) => ({ batch: r._id, count: r.count })).sort((a, b) => num(a.batch) - num(b.batch));
     return res.status(200).json({ success: true, data });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ success: false, message: 'Server error while fetching bootcamp batches.' });
+  }
+};
+
+const BATCH_JOINED_VALUES = ['Joined', 'Not joined'];
+const BATCH_MAX_PEOPLE = 500;
+const cleanBatchLabel = (b) => String(b || '').trim().replace(/\s+/g, ' ');
+
+// POST /api/candidates/bootcamp-batches/assign
+// body: { batch, joined?, note?, candidateIds?: [id], candidates?: [{ fullName, email, phone? }] }
+// Puts people in a bootcamp batch. A batch that doesn't exist yet is created by this call (a batch
+// is just a label on its candidates). candidateIds = people already in the ATS; candidates = people
+// by email — an email already in the ATS is just tagged, otherwise a new candidate is created
+// (role CODING, Freelance, source "Bootcamp"). Someone already in the batch only gets Joined / note updated.
+exports.assignBootcampBatch = async (req, res) => {
+  try {
+    const { joined, note, candidateIds = [], candidates = [] } = req.body;
+    const batch = cleanBatchLabel(req.body.batch);
+    if (!batch) return res.status(400).json({ success: false, message: 'Batch name is required.' });
+    if (batch.length > 40) return res.status(400).json({ success: false, message: 'Batch name must be 40 characters or fewer.' });
+    if (joined && !BATCH_JOINED_VALUES.includes(joined)) {
+      return res.status(400).json({ success: false, message: 'Joined status must be "Joined" or "Not joined".' });
+    }
+    if (!Array.isArray(candidateIds) || !Array.isArray(candidates) || candidateIds.length + candidates.length === 0) {
+      return res.status(400).json({ success: false, message: 'Select candidates or enter at least one new candidate.' });
+    }
+    if (candidateIds.length + candidates.length > BATCH_MAX_PEOPLE) {
+      return res.status(400).json({ success: false, message: `Add at most ${BATCH_MAX_PEOPLE} people at a time.` });
+    }
+    const noteText = String(note || '').trim();
+
+    const skipped = [];
+    // People entered by email: split into existing (tag) and new (create).
+    const byEmail = new Map();
+    candidates.forEach((c) => {
+      const email = String(c && c.email || '').trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { skipped.push({ who: (c && (c.fullName || c.email)) || '(blank)', reason: 'Invalid email' }); return; }
+      if (!byEmail.has(email)) byEmail.set(email, { fullName: String(c.fullName || '').trim().replace(/\s+/g, ' '), phone: String(c.phone || '').trim() });
+    });
+    const emailDocs = byEmail.size
+      ? await Candidate.find({ email: { $in: [...byEmail.keys()] } }, { bootcampBatches: 1, email: 1 }).lean()
+      : [];
+    const existingEmails = new Set(emailDocs.map((d) => d.email));
+    const idDocs = candidateIds.length
+      ? await Candidate.find({ _id: { $in: candidateIds } }, { bootcampBatches: 1 }).lean()
+      : [];
+
+    let added = 0;
+    let updated = 0;
+    const ops = [];
+    [...idDocs, ...emailDocs].forEach((d) => {
+      const existing = (d.bootcampBatches || []).find((b) => b.batch === batch);
+      if (existing) {
+        const set = {};
+        if (joined) set['bootcampBatches.$[b].joined'] = joined;
+        if (noteText) set['bootcampBatches.$[b].note'] = noteText;
+        updated += 1;
+        if (Object.keys(set).length) ops.push({ updateOne: { filter: { _id: d._id }, update: { $set: set }, arrayFilters: [{ 'b.batch': batch }] } });
+      } else {
+        added += 1;
+        ops.push({ updateOne: { filter: { _id: d._id }, update: { $push: { bootcampBatches: { batch, joined: joined || null, note: noteText } } } } });
+      }
+    });
+    if (ops.length) await Candidate.bulkWrite(ops);
+
+    // Brand-new people.
+    const fresh = [...byEmail.entries()].filter(([email]) => !existingEmails.has(email)).map(([email, p]) => ({
+      fullName: p.fullName || email.split('@')[0],
+      email,
+      phone: p.phone || 'N/A',
+      location: '',
+      roleCode: 'CODING',
+      employmentType: 'Freelance',
+      yearsOfExperience: 0,
+      source: 'Bootcamp',
+      generalRemarks: 'Added to a bootcamp batch from the ATS.',
+      bootcampBatches: [{ batch, joined: joined || null, note: noteText }]
+    }));
+    const valid = fresh.filter((d) => {
+      const err = new Candidate(d).validateSync();
+      if (err) skipped.push({ who: d.email, reason: Object.values(err.errors).map((e) => e.message).join('; ') });
+      return !err;
+    });
+    if (valid.length) await Candidate.insertMany(valid);
+
+    clearResponseCache(); // bulkWrite has no model hook
+    const missing = candidateIds.length - idDocs.length;
+    if (missing > 0) skipped.push({ who: `${missing} selected candidate(s)`, reason: 'Not found' });
+    return res.status(200).json({
+      success: true,
+      message: `${batch}: ${added + valid.length} added (${valid.length} new candidate${valid.length === 1 ? '' : 's'}), ${updated} already in the batch.`,
+      data: { batch, added: added + valid.length, created: valid.length, alreadyInBatch: updated, skipped }
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Server error while adding to the batch.' });
+  }
+};
+
+// POST /api/candidates/bootcamp-batches/remove  body: { batch, candidateIds }
+// Takes people out of one batch; the candidates themselves are untouched.
+exports.removeFromBootcampBatch = async (req, res) => {
+  try {
+    const batch = cleanBatchLabel(req.body.batch);
+    const { candidateIds } = req.body;
+    if (!batch || !Array.isArray(candidateIds) || candidateIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'Batch and at least one candidate are required.' });
+    }
+    const result = await Candidate.updateMany(
+      { _id: { $in: candidateIds }, 'bootcampBatches.batch': batch },
+      { $pull: { bootcampBatches: { batch } } }
+    );
+    return res.status(200).json({ success: true, message: `Removed ${result.modifiedCount} from ${batch}.`, data: { removed: result.modifiedCount } });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Server error while removing from the batch.' });
   }
 };
 

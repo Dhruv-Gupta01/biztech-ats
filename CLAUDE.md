@@ -259,6 +259,8 @@ All base paths mount under `/api`. Responses are `{ success, message, data? }`.
 | POST | `/api/candidates/apply` | multipart `resume` (candidate application) |
 | POST | `/api/candidates/bulk-upload-resumes` | `resumes[]` (≤50 PDFs) + `roleCode` |
 | GET | `/api/candidates/bootcamp-batches` | batch labels with candidate counts (feeds the Bootcamp Batches filter; `options=bootcampBatch&optionValue=<batch>` on the list filters by batch) |
+| POST | `/api/candidates/bootcamp-batches/assign` | `{batch, joined?, note?, candidateIds?[], candidates?[{fullName,email,phone}]}` add people to a batch (a new label creates the batch); new emails create CODING / Freelance / source Bootcamp candidates |
+| POST | `/api/candidates/bootcamp-batches/remove` | `{batch, candidateIds[]}` take people out of one batch |
 | GET | `/api/candidates` | query: roleCode, status, employmentType, source, minExperience, maxExperience, minSuitability, screeningInterview, calendlyLinkSent, calendlyLinkStatus, ndaIca, slackStatus, bootcampAttempts, bootcampStatus, onboarding, project, projectStatus, **options** (statusColumn field), **optionValue** (statusColumnValue) |
 | POST | `/api/candidates/:id/score` | `{skillScore, experienceScore}` |
 | POST | `/api/candidates/:id/interview-stage` | `{interviewer, rating, feedback}` |
