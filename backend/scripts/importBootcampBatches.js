@@ -109,14 +109,18 @@ async function run() {
 
   const list = [...people.values()];
   const lookup = [...new Set(list.flatMap((p) => [p.email, ...p.altEmails]))];
-  const found = new Map((await Candidate.find({ email: { $in: lookup } }, { email: 1 }).lean()).map((c) => [c.email, c.email]));
+  const found = new Map((await Candidate.find({ email: { $in: lookup } }, { email: 1, phone: 1 }).lean()).map((c) => [c.email, c]));
 
   const updates = [];
   const creates = [];
   list.forEach((p) => {
     const match = [p.email, ...p.altEmails].find((e) => found.has(e));
-    if (match) updates.push({ email: match, bootcampBatches: asEntries(p) });
-    else creates.push({
+    if (match) {
+      const u = { email: match, bootcampBatches: asEntries(p) };
+      // Only fill a phone that is missing / N/A — never overwrite a real number.
+      if (p.phone && ['', 'N/A', 'NA'].includes(String(found.get(match).phone || '').trim().toUpperCase())) u.phone = p.phone;
+      updates.push(u);
+    } else creates.push({
       fullName: p.name,
       email: p.email,
       phone: p.phone || 'N/A',
@@ -139,6 +143,7 @@ async function run() {
   }));
 
   console.log(`\nPeople: ${list.length} unique  |  already in ATS: ${updates.length}  |  to create: ${creates.length}  |  invalid: ${invalid.length}`);
+  console.log(`Existing candidates whose N/A phone would be filled: ${updates.filter((u) => u.phone).length}`);
   console.log(`Rows skipped (no email, name not resolvable): ${skipped.length}`);
   skipped.forEach((s) => console.log(`  - ${s}`));
   console.log(`Phones lost to Excel formatting (stored as N/A for new candidates): ${rows.filter((r) => r.phoneLost).length} rows`);
@@ -153,9 +158,9 @@ async function run() {
 
   if (updates.length) {
     const res = await Candidate.bulkWrite(updates.map((u) => ({
-      updateOne: { filter: { email: u.email }, update: { $set: { bootcampBatches: u.bootcampBatches } } }
+      updateOne: { filter: { email: u.email }, update: { $set: u.phone ? { bootcampBatches: u.bootcampBatches, phone: u.phone } : { bootcampBatches: u.bootcampBatches } } }
     })));
-    console.log(`\nTagged existing candidates: ${res.modifiedCount} modified (${updates.length} matched)`);
+    console.log(`\nTagged existing candidates: ${res.modifiedCount} modified (${updates.length} matched), phones filled: ${updates.filter((u) => u.phone).length}`);
   }
   const valid = creates.filter((d) => !invalid.includes(d));
   if (valid.length) {
