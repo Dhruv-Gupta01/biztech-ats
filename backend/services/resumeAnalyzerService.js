@@ -4,6 +4,10 @@ const MAX_RETRIES = 3;
 // A cold Render free instance takes about a minute to wake; edge answers 429/502/503 meanwhile.
 const WAKE_TIMEOUT_MS = 90000;
 const WAKE_POLL_MS = 4000;
+// Each attempt gets its own timeout (a normal 20-resume chunk takes ~20s), and retries stop once the
+// overall deadline passes, so one stalled call can't use up the time of every retry.
+const ATTEMPT_TIMEOUT_MS = 120000;
+const OVERALL_DEADLINE_MS = 300000;
 
 // Polls the unauthenticated /health until the analyzer answers (or the deadline passes, then the caller retries anyway).
 async function waitUntilAwake() {
@@ -20,8 +24,7 @@ const API_KEY = 'OKqUW9Yfe7o9swI7nivsCVNHODnnwjAq8y0_9wsAulY';
 
 // criteria ([{text, weight}]) and jdWeight are optional; with neither the analyzer returns one holistic 0-100 score.
 async function scoreResumes(jobDescription, resumes, criteria = [], jdWeight = 0) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 240000);
+  const deadline = Date.now() + OVERALL_DEADLINE_MS;
 
   const attempt = async (retries = MAX_RETRIES) => {
     try {
@@ -37,7 +40,7 @@ async function scoreResumes(jobDescription, resumes, criteria = [], jdWeight = 0
           ...(criteria.length ? { criteria } : {}),
           ...(jdWeight > 0 ? { jd_weight: jdWeight } : {})
         }),
-        signal: controller.signal
+        signal: AbortSignal.timeout(ATTEMPT_TIMEOUT_MS)
       });
 
       if (!response.ok) {
@@ -56,19 +59,18 @@ async function scoreResumes(jobDescription, resumes, criteria = [], jdWeight = 0
       const data = await response.json();
       return data.results || [];
     } catch (err) {
-      if (retries > 0 && (err.name === 'AbortError' || err.message.includes('fetch failed') || err.message.includes('ECONNRESET'))) {
-        await new Promise(r => setTimeout(r, 1000));
+      const timedOut = err.name === 'TimeoutError' || err.name === 'AbortError';
+      if (retries > 0 && Date.now() < deadline && (timedOut || err.message.includes('fetch failed') || err.message.includes('ECONNRESET'))) {
+        // A stalled or dropped call usually means the free instance is waking or restarting.
+        await waitUntilAwake();
         return attempt(retries - 1);
       }
+      if (timedOut) throw new Error('Resume analyzer did not respond in time. Try again in a minute.');
       throw err;
     }
   };
 
-  try {
-    return await attempt();
-  } finally {
-    clearTimeout(timeout);
-  }
+  return attempt();
 }
 
 module.exports = { scoreResumes };

@@ -694,14 +694,20 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
       for (let i = 0; i < ids.length; i += ANALYZE_CHUNK) {
         setAnalyzeProgress(`${Math.min(i + ANALYZE_CHUNK, ids.length)}/${ids.length}`);
         const chunk = ids.slice(i, i + ANALYZE_CHUNK);
+        // One retry per chunk: a stalled call usually means the free analyzer instance was waking up.
         let res;
-        try {
-          res = await analyzeCandidatesBulk(chunk);
-        } catch (err) {
-          stopMsg = err.message || 'Bulk resume analysis failed.';
-          break;
+        let chunkErr = '';
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          chunkErr = '';
+          try {
+            res = await analyzeCandidatesBulk(chunk);
+            if (res.success) break;
+            chunkErr = res.message || 'Resume analysis failed.';
+          } catch (err) {
+            chunkErr = err.message || 'Bulk resume analysis failed.';
+          }
         }
-        if (!res.success) { stopMsg = res.message || 'Resume analysis failed.'; break; }
+        if (chunkErr) { stopMsg = chunkErr; break; }
         const data = res.data || [];
         noResume += chunk.length - data.length;
         const scoreMap = {};
