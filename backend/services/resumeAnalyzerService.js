@@ -1,7 +1,8 @@
 const API_BASE = 'https://bta-resume-screener.onrender.com';
 const API_KEY = 'OKqUW9Yfe7o9swI7nivsCVNHODnnwjAq8y0_9wsAulY';
 
-async function scoreResumes(jobDescription, resumes) {
+// criteria ([{text, weight}]) and jdWeight are optional; with neither the analyzer returns one holistic 0-100 score.
+async function scoreResumes(jobDescription, resumes, criteria = [], jdWeight = 0) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 120000);
 
@@ -15,7 +16,9 @@ async function scoreResumes(jobDescription, resumes) {
         },
         body: JSON.stringify({
           job_description: jobDescription,
-          resumes
+          resumes,
+          ...(criteria.length ? { criteria } : {}),
+          ...(jdWeight > 0 ? { jd_weight: jdWeight } : {})
         }),
         signal: controller.signal
       });

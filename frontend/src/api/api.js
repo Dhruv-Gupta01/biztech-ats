@@ -101,11 +101,11 @@ export async function scoreCandidate(id, payload) {
 export async function analyzeCandidate(id) {
   return request(`${BASE_URL}/candidates/${id}/analyze`, { method: 'POST' });
 }
-export async function analyzeCandidatesBulk(candidateIds = []) {
+export async function analyzeCandidatesBulk(candidateIds = [], criteria = [], jdWeight = 0) {
   return request(`${BASE_URL}/candidates/analyze-bulk`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ candidateIds })
+    body: JSON.stringify({ candidateIds, criteria, jdWeight })
   });
 }
 

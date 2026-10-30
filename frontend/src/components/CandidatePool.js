@@ -97,6 +97,10 @@ function CandidatePool() {
 
   const [analyzerScores, setAnalyzerScores] = useState({});
   const [analyzing, setAnalyzing] = useState(false);
+  // Optional weighted rubric for the Resume Analyzer; empty = one holistic score.
+  const [showRubric, setShowRubric] = useState(false);
+  const [rubric, setRubric] = useState([{ text: '', weight: '' }]);
+  const [jdWeight, setJdWeight] = useState('');
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const csvInputRef = useRef(null);
@@ -679,7 +683,12 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
     try {
       const ids = selectedIds.length > 0 ? selectedIds : [];
       console.log('[Analyzer] calling analyzeCandidatesBulk with ids', ids);
-      const res = await analyzeCandidatesBulk(ids);
+      const criteria = rubric.filter((r) => r.text.trim() && Number(r.weight) > 0).map((r) => ({ text: r.text.trim(), weight: Number(r.weight) }));
+      if (rubric.some((r) => r.text.trim() && !(Number(r.weight) > 0))) {
+        setAnalyzerError('Every criterion needs a weight greater than 0.');
+        return;
+      }
+      const res = await analyzeCandidatesBulk(ids, criteria, Number(jdWeight) || 0);
       console.log('[Analyzer] analyzeCandidatesBulk response', res);
       if (!res.success) {
         const msg = res.message || 'Resume analysis failed.';
@@ -710,6 +719,11 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
       setAnalyzing(false);
     }
   };
+
+  // Hover text for a score: each criterion's 0-100 score, when a rubric was used.
+  const breakdownTitle = (a) => (a && a.breakdown && a.breakdown.length)
+    ? a.breakdown.map((b) => `${b.criterion} (weight ${b.weight}): ${b.score}/100`).join('\n')
+    : undefined;
 
   const saveAnalyzerScores = async () => {
     setAnalyzerError('');
@@ -800,6 +814,27 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
           )}
         </div>
       )}
+      {showRubric && (
+        <div className="card" style={{ padding: 12, marginBottom: 12 }}>
+          <strong>Weighted scoring criteria (optional)</strong>
+          <p style={{ margin: '4px 0 8px', fontSize: 13, opacity: 0.8 }}>
+            Add specific requirements with a weight each, e.g. "4 to 7 years building production systems" with weight 40. The score becomes a weighted average of how well each resume meets each criterion. Weights are normalized, so they don't need to sum to 100. Leave empty for the default single holistic score. Hover a score to see its breakdown.
+          </p>
+          {rubric.map((r, i) => (
+            <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+              <input placeholder="Criterion" maxLength={500} value={r.text} style={{ flex: 1 }} onChange={(e) => setRubric(rubric.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))} />
+              <input type="number" min="1" placeholder="Weight" value={r.weight} style={{ width: 90 }} onChange={(e) => setRubric(rubric.map((x, j) => (j === i ? { ...x, weight: e.target.value } : x)))} />
+              <button className="btn-secondary" onClick={() => setRubric(rubric.length > 1 ? rubric.filter((_, j) => j !== i) : [{ text: '', weight: '' }])} title="Remove criterion">✕</button>
+            </div>
+          ))}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <button className="btn-secondary" onClick={() => setRubric([...rubric, { text: '', weight: '' }])} disabled={rubric.length >= 20}>+ Add criterion</button>
+            <label style={{ fontSize: 13 }}>JD weight (optional){' '}
+              <input type="number" min="0" placeholder="0" value={jdWeight} style={{ width: 80 }} onChange={(e) => setJdWeight(e.target.value)} title="Weight of the model's overall fit to the whole job description, added as one more entry in the weighted average" />
+            </label>
+          </div>
+        </div>
+      )}
       {analyzing && <div className="alert">⏳ Resume Analyzer is running... Please wait while we analyze the selected candidates.</div>}
 
       <div className="filters-row">
@@ -860,6 +895,7 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
         <input ref={csvInputRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleImportFile} />
         <button className="btn-primary" onClick={triggerImport} disabled={importing}>{importing ? 'Importing...' : '⭱ Import CSV'}</button>
         <button className="btn-secondary" onClick={runBulkAnalyze} disabled={analyzing || !filters.roleCode || selectedIds.length === 0} title={!filters.roleCode ? 'Select a specific Role Code' : ''}>{analyzing ? 'Analyzing...' : 'Resume Analyzer'}</button>
+        <button className="btn-secondary" onClick={() => setShowRubric((v) => !v)} title="Optional weighted criteria for the Resume Analyzer">⚖ Criteria{rubric.some((r) => r.text.trim()) ? ' ✓' : ''}</button>
         <button className="btn-secondary" onClick={saveAnalyzerScores} disabled={selectedIds.length === 0 || Object.keys(analyzerScores).length === 0} title="Save analyzer scores for selected candidates">💾 Save Scores</button>
         {freelanceMode && (
           <button
@@ -1044,7 +1080,7 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
                               <td>{c.location || '—'}</td>
                               <td>
                                 {analyzerScores[c._id] ? (
-                                  <span style={{ fontWeight: 600, color: analyzerScores[c._id].score >= 7 ? 'var(--green)' : analyzerScores[c._id].score >= 4 ? 'var(--amber)' : 'var(--red)' }}>
+                                  <span style={{ fontWeight: 600, color: analyzerScores[c._id].score >= 7 ? 'var(--green)' : analyzerScores[c._id].score >= 4 ? 'var(--amber)' : 'var(--red)' }} title={breakdownTitle(analyzerScores[c._id])}>
                                     {analyzerScores[c._id].score}/10
                                   </span>
                                 ) : (
@@ -1111,7 +1147,7 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
                               <td>
                                 {/* Resume Analyzer Score */}
                                 {analyzerScores[c._id] ? (
-                                  <span style={{ fontWeight: 600, color: analyzerScores[c._id].score >= 7 ? 'var(--green)' : analyzerScores[c._id].score >= 4 ? 'var(--amber)' : 'var(--red)' }}>
+                                  <span style={{ fontWeight: 600, color: analyzerScores[c._id].score >= 7 ? 'var(--green)' : analyzerScores[c._id].score >= 4 ? 'var(--amber)' : 'var(--red)' }} title={breakdownTitle(analyzerScores[c._id])}>
                                     {analyzerScores[c._id].score}/10
                                   </span>
                                 ) : (
@@ -1272,7 +1308,7 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
                             ))}
                             <td>
                               {analyzerScores[c._id] ? (
-                                <span style={{ fontWeight: 600, color: analyzerScores[c._id].score >= 7 ? 'var(--green)' : analyzerScores[c._id].score >= 4 ? 'var(--amber)' : 'var(--red)' }}>
+                                <span style={{ fontWeight: 600, color: analyzerScores[c._id].score >= 7 ? 'var(--green)' : analyzerScores[c._id].score >= 4 ? 'var(--amber)' : 'var(--red)' }} title={breakdownTitle(analyzerScores[c._id])}>
                                   {analyzerScores[c._id].score}/10
                                 </span>
                               ) : (
