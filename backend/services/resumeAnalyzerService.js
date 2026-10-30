@@ -1,12 +1,27 @@
 const API_BASE = 'https://bta-resume-screener.onrender.com';
 const RETRYABLE_STATUS = new Set([429, 502, 503, 504]);
 const MAX_RETRIES = 3;
+// A cold Render free instance takes about a minute to wake; edge answers 429/502/503 meanwhile.
+const WAKE_TIMEOUT_MS = 90000;
+const WAKE_POLL_MS = 4000;
+
+// Polls the unauthenticated /health until the analyzer answers (or the deadline passes, then the caller retries anyway).
+async function waitUntilAwake() {
+  const deadline = Date.now() + WAKE_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(8000) });
+      if (res.ok) return;
+    } catch (e) { /* still waking */ }
+    await new Promise((r) => setTimeout(r, WAKE_POLL_MS));
+  }
+}
 const API_KEY = 'OKqUW9Yfe7o9swI7nivsCVNHODnnwjAq8y0_9wsAulY';
 
 // criteria ([{text, weight}]) and jdWeight are optional; with neither the analyzer returns one holistic 0-100 score.
 async function scoreResumes(jobDescription, resumes, criteria = [], jdWeight = 0) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 150000);
+  const timeout = setTimeout(() => controller.abort(), 240000);
 
   const attempt = async (retries = MAX_RETRIES) => {
     try {
@@ -28,10 +43,11 @@ async function scoreResumes(jobDescription, resumes, criteria = [], jdWeight = 0
       if (!response.ok) {
         const text = await response.text();
         // 429 / 502 / 503 / 504 come from Render's edge while the free instance wakes or is busy:
-        // wait (honouring Retry-After, capped) and try again instead of failing the whole run.
+        // wait for it to answer /health (a cold start outlasts a few short sleeps), then try again.
         if (RETRYABLE_STATUS.has(response.status) && retries > 0) {
-          const wait = Math.min(15, Number(response.headers.get('retry-after')) || (MAX_RETRIES - retries + 1) * 4);
-          await new Promise((r) => setTimeout(r, wait * 1000));
+          await waitUntilAwake();
+          const wait = Math.min(15, Number(response.headers.get('retry-after')) || 0);
+          if (wait) await new Promise((r) => setTimeout(r, wait * 1000));
           return attempt(retries - 1);
         }
         throw new Error(`Resume analyzer API returned ${response.status}${text ? `: ${text.trim()}` : ''}`);
