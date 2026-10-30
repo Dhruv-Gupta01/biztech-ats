@@ -678,48 +678,74 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
     }
   };
 
-  // Big selections (e.g. everything imported in a date range) go to the analyzer in small
-  // chunks: it scores at most 100 resumes per call and each request must finish before the proxy times out.
+  // The analyzer scores against one role's JD and criteria per call, so a mixed selection is grouped
+  // by role code and each group goes in small chunks (it scores at most 100 resumes per call and each
+  // request must finish before the proxy times out).
   const ANALYZE_CHUNK = 20;
   const runBulkAnalyze = async () => {
     setAnalyzing(true);
     setAnalyzerError('');
     const ids = [...selectedIds];
+    const roleById = new Map(candidates.map((c) => [c._id, (c.roleCode || '').toUpperCase().trim()]));
+    const groups = new Map();
+    for (const id of ids) {
+      const code = roleById.get(id) || '';
+      if (!groups.has(code)) groups.set(code, []);
+      groups.get(code).push(id);
+    }
     let analyzed = 0;
     let noResume = 0;
     let failed = 0;
+    let done = 0;
     const reasons = new Set();
+    const skippedRoles = [];
     let stopMsg = '';
     try {
-      for (let i = 0; i < ids.length; i += ANALYZE_CHUNK) {
-        setAnalyzeProgress(`${Math.min(i + ANALYZE_CHUNK, ids.length)}/${ids.length}`);
-        const chunk = ids.slice(i, i + ANALYZE_CHUNK);
-        // One retry per chunk: a stalled call usually means the free analyzer instance was waking up.
-        let res;
-        let chunkErr = '';
-        for (let attempt = 0; attempt < 2; attempt += 1) {
-          chunkErr = '';
-          try {
-            res = await analyzeCandidatesBulk(chunk);
-            if (res.success) break;
-            chunkErr = res.message || 'Resume analysis failed.';
-          } catch (err) {
-            chunkErr = err.message || 'Bulk resume analysis failed.';
+      groupLoop:
+      for (const [code, groupIds] of groups) {
+        for (let i = 0; i < groupIds.length; i += ANALYZE_CHUNK) {
+          const chunk = groupIds.slice(i, i + ANALYZE_CHUNK);
+          done += chunk.length;
+          setAnalyzeProgress(`${done}/${ids.length}${groups.size > 1 && code ? ` · ${code}` : ''}`);
+          // One retry per chunk: a stalled call usually means the free analyzer instance was waking up.
+          let res;
+          let chunkErr = '';
+          for (let attempt = 0; attempt < 2; attempt += 1) {
+            chunkErr = '';
+            try {
+              res = await analyzeCandidatesBulk(chunk);
+              if (res.success) break;
+              chunkErr = res.message || 'Resume analysis failed.';
+            } catch (err) {
+              chunkErr = err.message || 'Bulk resume analysis failed.';
+            }
+            // A role without a job description won't change on retry.
+            if (/No job description/i.test(chunkErr)) break;
           }
+          if (chunkErr) {
+            if (/No job description/i.test(chunkErr)) {
+              // Skip the rest of this role, keep going with the others.
+              skippedRoles.push(code || 'unknown role');
+              done += groupIds.length - i - chunk.length;
+              break;
+            }
+            stopMsg = chunkErr;
+            break groupLoop;
+          }
+          const data = res.data || [];
+          noResume += chunk.length - data.length;
+          const scoreMap = {};
+          for (const item of data) {
+            if (item.score == null) { failed += 1; if (item.error) reasons.add(typeof item.error === 'string' ? item.error : 'scoring error'); continue; }
+            analyzed += 1;
+            scoreMap[item.candidateId] = { score: item.score, breakdown: item.breakdown };
+          }
+          // Show scores as each chunk lands.
+          setAnalyzerScores((prev) => ({ ...prev, ...scoreMap }));
         }
-        if (chunkErr) { stopMsg = chunkErr; break; }
-        const data = res.data || [];
-        noResume += chunk.length - data.length;
-        const scoreMap = {};
-        for (const item of data) {
-          if (item.score == null) { failed += 1; if (item.error) reasons.add(typeof item.error === 'string' ? item.error : 'scoring error'); continue; }
-          analyzed += 1;
-          scoreMap[item.candidateId] = { score: item.score, breakdown: item.breakdown };
-        }
-        // Show scores as each chunk lands.
-        setAnalyzerScores((prev) => ({ ...prev, ...scoreMap }));
       }
       const parts = [];
+      if (skippedRoles.length) parts.push(`no job description for ${skippedRoles.join(', ')} (add one in Roles & Codes)`);
       if (noResume) parts.push(`${noResume} had no parsed resume text`);
       if (failed) parts.push(`${failed} could not be scored${reasons.size ? ` (${[...reasons].slice(0, 2).join('; ')})` : ''}`);
       if (stopMsg) parts.push(`stopped early: ${stopMsg}`);
@@ -890,7 +916,7 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
         <button className="btn-secondary" onClick={downloadSampleCSV}>Download Sample CSV</button>
         <input ref={csvInputRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleImportFile} />
         <button className="btn-primary" onClick={triggerImport} disabled={importing}>{importing ? 'Importing...' : '⭱ Import CSV'}</button>
-        <button className="btn-secondary" onClick={runBulkAnalyze} disabled={analyzing || selectedIds.length === 0} title="Scores the selected candidates against their role's JD and criteria. They must share one role code, and that role needs a job description (Roles & Codes).">{analyzing ? `Analyzing ${analyzeProgress}...` : 'Resume Analyzer'}</button>
+        <button className="btn-secondary" onClick={runBulkAnalyze} disabled={analyzing || selectedIds.length === 0} title="Scores the selected candidates against their role's JD and criteria. Mixed role codes are scored in separate groups, and each role needs a job description (Roles & Codes).">{analyzing ? `Analyzing ${analyzeProgress}...` : 'Resume Analyzer'}</button>
         <button className="btn-secondary" onClick={saveAnalyzerScores} disabled={selectedIds.length === 0 || Object.keys(analyzerScores).length === 0} title="Save analyzer scores for selected candidates">💾 Save Scores</button>
         {freelanceMode && (
           <button
