@@ -149,6 +149,7 @@ function CandidateProfileModal({ candidate, role, onClose, onSaved }) {
                   </Field>
                   <Field label="Location">{c.location}</Field>
                   <Field label="Source">{c.source}</Field>
+                  <Field label="Imported to ATS">{c.createdAt ? new Date(c.createdAt).toLocaleString() : null}</Field>
                 </div>
               </div>
 

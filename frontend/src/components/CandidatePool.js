@@ -55,19 +55,21 @@ function assessmentBadgeClass(assessmentStatus) {
   return 'badge ' + (map[assessmentStatus] || 'badge-applied');
 }
 
+const fmtImported = (d) => new Date(d).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
 function toCSV(rows, freelance = false) {
   if (freelance) {
-    const headers = ['Name', 'Email', 'Role Code', 'Location', 'Analyzer Score', 'Screening Interview', 'Calendly Link Sent', 'Calendly Link Status', 'NDA & ICA', 'Slack', 'Bootcamp Attempts', 'Bootcamp Status', 'Onboarding', 'Project', 'Project Status'];
+    const headers = ['Name', 'Email', 'Role Code', 'Location', 'Analyzer Score', 'Screening Interview', 'Calendly Link Sent', 'Calendly Link Status', 'NDA & ICA', 'Slack', 'Bootcamp Attempts', 'Bootcamp Status', 'Onboarding', 'Project', 'Project Status', 'Imported'];
     const lines = rows.map((c) => [
       c.fullName, c.email, c.roleCode, c.location || '',
       c.score?.suitabilityRating ?? '', c.screeningInterview || '', c.calendlyLinkSent || '',
       c.calendlyLinkStatus || '', c.ndaIca || '', c.slackStatus || '',
       c.bootcampAttempts || '', c.bootcampStatus || '', c.onboarding || '',
-      c.project || '', c.projectStatus || ''
+      c.project || '', c.projectStatus || '', c.createdAt || ''
     ].join(','));
     return [headers.join(','), ...lines].join('\n');
   }
-  const headers = ['Name', 'Email', 'Role Code', 'Type', 'Location', 'CTC Current', 'CTC Expected', 'Status', 'Assessment Status', 'Suitability', 'Updated'];
+  const headers = ['Name', 'Email', 'Role Code', 'Type', 'Location', 'CTC Current', 'CTC Expected', 'Status', 'Assessment Status', 'Suitability', 'Imported'];
   const lines = rows.map((c) => [
     c.fullName, c.email, c.roleCode, fallbackTypeLabel(c.employmentType), c.location || '',
     c.ctcCurrent || '', c.ctcExpected || '', c.status, c.assessmentStatus, c.score?.suitabilityRating ?? '', c.createdAt || ''
@@ -92,11 +94,12 @@ function CandidatePool() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
-  const [filters, setFilters] = useState({ employmentType: '', roleCode: '', statusColumn: '', statusColumnValue: '', minExperience: '', maxExperience: '', source: '' });
+  const [filters, setFilters] = useState({ employmentType: '', roleCode: '', statusColumn: '', statusColumnValue: '', minExperience: '', maxExperience: '', source: '', startDate: '', endDate: '' });
   const [query, setQuery] = useState('');
 
   const [analyzerScores, setAnalyzerScores] = useState({});
   const [analyzing, setAnalyzing] = useState(false);
+  const [analyzeProgress, setAnalyzeProgress] = useState('');
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const csvInputRef = useRef(null);
@@ -384,6 +387,9 @@ function CandidatePool() {
       p.options = filters.statusColumn;
       if (filters.statusColumnValue) p.optionValue = filters.statusColumnValue;
     }
+    // Import window, as the user's local calendar days (start of the first day to end of the last).
+    if (filters.startDate) p.startDate = new Date(`${filters.startDate}T00:00:00`).toISOString();
+    if (filters.endDate) p.endDate = new Date(`${filters.endDate}T23:59:59.999`).toISOString();
     if (debouncedQuery.trim()) p.q = debouncedQuery.trim();
     return p;
   };
@@ -672,41 +678,47 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
     }
   };
 
+  // Big selections (e.g. everything imported in a date range) go to the analyzer in small
+  // chunks: it scores at most 100 resumes per call and each request must finish before the proxy times out.
+  const ANALYZE_CHUNK = 20;
   const runBulkAnalyze = async () => {
-    console.log('[Analyzer] runBulkAnalyze clicked', { selectedIds, roleCode: filters.roleCode });
     setAnalyzing(true);
     setAnalyzerError('');
+    const ids = [...selectedIds];
+    let analyzed = 0;
+    let noResume = 0;
+    let failed = 0;
+    let stopMsg = '';
     try {
-      const ids = selectedIds.length > 0 ? selectedIds : [];
-      console.log('[Analyzer] calling analyzeCandidatesBulk with ids', ids);
-      const res = await analyzeCandidatesBulk(ids);
-      console.log('[Analyzer] analyzeCandidatesBulk response', res);
-      if (!res.success) {
-        const msg = res.message || 'Resume analysis failed.';
-        console.log('[Analyzer] backend reported failure', msg);
-        setAnalyzerError(msg);
-        return;
-      }
-      if (res.data) {
-        if (res.data.length === 0) {
-          const msg = res.message || 'No resume text available for selected candidates. Ensure resumes were uploaded/parsed.';
-          console.log('[Analyzer] empty data', msg);
-          setAnalyzerError(msg);
-        } else {
-          const scoreMap = {};
-          res.data.forEach((item) => {
-            scoreMap[item.candidateId] = { score: item.score, breakdown: item.breakdown };
-          });
-          console.log('[Analyzer] updating local scores', scoreMap);
-          setAnalyzerScores((prev) => ({ ...prev, ...scoreMap }));
-          setAnalyzerError('');
+      for (let i = 0; i < ids.length; i += ANALYZE_CHUNK) {
+        setAnalyzeProgress(`${Math.min(i + ANALYZE_CHUNK, ids.length)}/${ids.length}`);
+        const chunk = ids.slice(i, i + ANALYZE_CHUNK);
+        let res;
+        try {
+          res = await analyzeCandidatesBulk(chunk);
+        } catch (err) {
+          stopMsg = err.message || 'Bulk resume analysis failed.';
+          break;
         }
+        if (!res.success) { stopMsg = res.message || 'Resume analysis failed.'; break; }
+        const data = res.data || [];
+        noResume += chunk.length - data.length;
+        const scoreMap = {};
+        for (const item of data) {
+          if (item.score == null) { failed += 1; continue; }
+          analyzed += 1;
+          scoreMap[item.candidateId] = { score: item.score, breakdown: item.breakdown };
+        }
+        // Show scores as each chunk lands.
+        setAnalyzerScores((prev) => ({ ...prev, ...scoreMap }));
       }
-    } catch (err) {
-      console.error('[Analyzer] bulk resume analysis failed:', err);
-      setAnalyzerError(err.message || 'Bulk resume analysis failed.');
+      const parts = [];
+      if (noResume) parts.push(`${noResume} had no parsed resume text`);
+      if (failed) parts.push(`${failed} failed to score`);
+      if (stopMsg) parts.push(`stopped early: ${stopMsg}`);
+      if (parts.length) setAnalyzerError(`Scored ${analyzed} of ${ids.length}. ${parts.join('; ')}.`);
     } finally {
-      console.log('[Analyzer] finishing, analyzing=false');
+      setAnalyzeProgress('');
       setAnalyzing(false);
     }
   };
@@ -805,7 +817,7 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
           )}
         </div>
       )}
-      {analyzing && <div className="alert">⏳ Resume Analyzer is running... Please wait while we analyze the selected candidates.</div>}
+      {analyzing && <div className="alert">⏳ Resume Analyzer is running{analyzeProgress ? ` (${analyzeProgress})` : ''}... Scores appear as each batch finishes.</div>}
 
       <div className="filters-row">
         <select value={filters.employmentType} onChange={(e) => setFilters({ ...filters, employmentType: e.target.value, roleCode: '', statusColumn: '', statusColumnValue: '' })}>
@@ -858,13 +870,20 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
         </select>
         <input type="number" min="0" placeholder="Min Exp (yrs)" value={filters.minExperience} onChange={(e) => setFilters({ ...filters, minExperience: e.target.value })} style={{ width: 110 }} />
         <input type="number" min="0" placeholder="Max Exp (yrs)" value={filters.maxExperience} onChange={(e) => setFilters({ ...filters, maxExperience: e.target.value })} style={{ width: 110 }} />
+        <label style={{ fontSize: 12, color: 'var(--text-500)' }} title="Date the candidate was imported into the ATS">Imported from{' '}
+          <input type="date" value={filters.startDate} max={filters.endDate || undefined} onChange={(e) => setFilters({ ...filters, startDate: e.target.value })} />
+        </label>
+        <label style={{ fontSize: 12, color: 'var(--text-500)' }}>to{' '}
+          <input type="date" value={filters.endDate} min={filters.startDate || undefined} onChange={(e) => setFilters({ ...filters, endDate: e.target.value })} />
+        </label>
+        {(filters.startDate || filters.endDate) && <button className="btn-secondary" onClick={() => setFilters({ ...filters, startDate: '', endDate: '' })}>Clear dates</button>}
         <input placeholder="Search name, email, phone, location, skills, roleCode, employmentType, experience, CTC, source" value={query} onChange={(e) => setQuery(e.target.value)} style={{ minWidth: 220 }} />
         <button className="btn-secondary" onClick={loadCandidates}>Refresh</button>
         <button className="btn-secondary" onClick={exportCSV}>Export CSV</button>
         <button className="btn-secondary" onClick={downloadSampleCSV}>Download Sample CSV</button>
         <input ref={csvInputRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleImportFile} />
         <button className="btn-primary" onClick={triggerImport} disabled={importing}>{importing ? 'Importing...' : '⭱ Import CSV'}</button>
-        <button className="btn-secondary" onClick={runBulkAnalyze} disabled={analyzing || !filters.roleCode || selectedIds.length === 0} title={!filters.roleCode ? 'Select a specific Role Code' : ''}>{analyzing ? 'Analyzing...' : 'Resume Analyzer'}</button>
+        <button className="btn-secondary" onClick={runBulkAnalyze} disabled={analyzing || !filters.roleCode || selectedIds.length === 0} title={!filters.roleCode ? 'Select a specific Role Code' : ''}>{analyzing ? `Analyzing ${analyzeProgress}...` : 'Resume Analyzer'}</button>
         <button className="btn-secondary" onClick={saveAnalyzerScores} disabled={selectedIds.length === 0 || Object.keys(analyzerScores).length === 0} title="Save analyzer scores for selected candidates">💾 Save Scores</button>
         {freelanceMode && (
           <button
@@ -1034,6 +1053,7 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
                         <td className="name-cell">
                           <button className="name-link" onClick={() => setProfileCandidate(c)}><strong>{c.fullName}</strong></button>
                           <br /><small>{c.email}</small>
+                          {c.createdAt && <><br /><small style={{ color: 'var(--text-500)' }}>Imported {fmtImported(c.createdAt)}</small></>}
                           {filters.statusColumn === 'bootcampBatch' && (c.bootcampBatches || []).length > 0 && (
                             <><br /><small style={{ color: 'var(--text-500)' }}>
                               {(c.bootcampBatches || [])

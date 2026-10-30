@@ -114,6 +114,12 @@ exports.analyzeBulk = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Please select candidates to analyze.' });
     }
 
+    // The screener scores at most 100 resumes per call and a request must finish before the
+    // proxy times out, so the pool sends big selections in small chunks.
+    if (candidateIds.length > 100) {
+      return res.status(400).json({ success: false, message: 'Analyze at most 100 candidates per request.' });
+    }
+
     const candidates = await Candidate.find({ _id: { $in: candidateIds } }).sort({ createdAt: -1 });
     if (candidates.length === 0) {
       return res.status(200).json({ success: true, count: 0, data: [] });
@@ -239,7 +245,7 @@ exports.getCandidates = async (req, res) => {
       roleCode, status, minExperience, maxExperience, source, employmentType,
       minSuitability, screeningInterview, calendlyLinkSent, calendlyLinkStatus,
       ndaIca, slackStatus, bootcampAttempts, bootcampStatus, onboarding,
-      project, projectStatus, options, optionValue, q, page, limit, idsOnly
+      project, projectStatus, options, optionValue, q, page, limit, idsOnly, startDate, endDate
     } = req.query;
     const filter = {};
 
@@ -285,6 +291,19 @@ exports.getCandidates = async (req, res) => {
       filter.yearsOfExperience = {};
       if (minExperience) filter.yearsOfExperience.$gte = Number(minExperience);
       if (maxExperience) filter.yearsOfExperience.$lte = Number(maxExperience);
+    }
+    // Import window: createdAt is when the candidate was added to the ATS. A bare YYYY-MM-DD
+    // end date covers that whole (UTC) day; the pool sends full ISO times for the user's local day.
+    if (startDate || endDate) {
+      const parseDate = (v, isEnd) => new Date(/^\d{4}-\d{2}-\d{2}$/.test(v) ? `${v}T${isEnd ? '23:59:59.999' : '00:00:00.000'}Z` : v);
+      const from = startDate ? parseDate(String(startDate), false) : null;
+      const to = endDate ? parseDate(String(endDate), true) : null;
+      if ((from && Number.isNaN(from.getTime())) || (to && Number.isNaN(to.getTime()))) {
+        return res.status(400).json({ success: false, message: 'startDate / endDate must be valid dates.' });
+      }
+      filter.createdAt = {};
+      if (from) filter.createdAt.$gte = from;
+      if (to) filter.createdAt.$lte = to;
     }
     if (minSuitability) filter['score.suitabilityRating'] = { $gte: Number(minSuitability) };
     if (screeningInterview) filter.screeningInterview = screeningInterview;

@@ -183,7 +183,7 @@ Routing is manual (`views[view] || Dashboard`), not a router library. `api.js` c
 | history | [{field, oldValue, newValue, changedBy, changedAt}] | audit trail |
 | score | {skillScore(0-10), experienceScore(0-10), suitabilityRating(0-10), scoredAt} | from POST /:id/score |
 | formSubmissions | [{formId, formName, submittedAt, matchedEmail, responses}] | Google Form sync results |
-| createdAt, updatedAt | Date | timestamps |
+| createdAt, updatedAt | Date | timestamps; `createdAt` is when the candidate was imported/added to the ATS (shown as "Imported" and filterable by start/end date in the pool) |
 
 ### Role (`models/Role.js`)
 
@@ -263,11 +263,11 @@ All base paths mount under `/api`. Responses are `{ success, message, data? }`.
 | GET | `/api/candidates/bootcamp-batches` | batch labels with candidate counts (feeds the Bootcamp Batches filter; `options=bootcampBatch&optionValue=<batch>` on the list filters by batch) |
 | POST | `/api/candidates/bootcamp-batches/assign` | `{batch, joined?, note?, candidateIds?[], candidates?[{fullName,email,phone}]}` add people to a batch (a new label creates the batch); new emails create CODING / Freelance / source Bootcamp candidates |
 | POST | `/api/candidates/bootcamp-batches/remove` | `{batch, candidateIds[]}` take people out of one batch |
-| GET | `/api/candidates` | query: roleCode, status, employmentType, source, minExperience, maxExperience, minSuitability, screeningInterview, calendlyLinkSent, calendlyLinkStatus, ndaIca, slackStatus, bootcampAttempts, bootcampStatus, onboarding, project, projectStatus, **options** (statusColumn field), **optionValue** (statusColumnValue) |
+| GET | `/api/candidates` | query: roleCode, status, employmentType, source, minExperience, maxExperience, minSuitability, screeningInterview, calendlyLinkSent, calendlyLinkStatus, ndaIca, slackStatus, bootcampAttempts, bootcampStatus, onboarding, project, projectStatus, **options** (statusColumn field), **optionValue** (statusColumnValue), **startDate** / **endDate** (import window on `createdAt`, ISO or YYYY-MM-DD) |
 | POST | `/api/candidates/:id/score` | `{skillScore, experienceScore}` |
 | POST | `/api/candidates/:id/interview-stage` | `{interviewer, rating, feedback}` |
 | POST | `/api/candidates/:id/analyze` | resume analyzer |
-| POST | `/api/candidates/analyze-bulk` | `{candidateIds[]}`; scores against the role's JD plus its `criteria` / `jdWeight` |
+| POST | `/api/candidates/analyze-bulk` | `{candidateIds[]}` (max 100 per request; the pool sends chunks of 20); scores against the role's JD plus its `criteria` / `jdWeight` |
 | POST | `/api/candidates/:id/calendly-status` | best-effort Calendly lookup |
 | PATCH | `/api/candidates/:id` | update fields |
 | DELETE | `/api/candidates/:id` | hard delete |
