@@ -138,12 +138,31 @@ exports.analyzeBulk = async (req, res) => {
     }
 
     const { scoreResumes } = require('../services/resumeAnalyzerService');
+    const { fetchResumeText } = require('../services/resumeFetchService');
+
+    // Sheet-imported candidates only have a resume link. Fetch and read it the first time,
+    // keep the text on the candidate so later runs skip the download.
+    const fetchErrors = {};
+    const needFetch = candidates.filter((c) => !c.resumeText && /^https?:\/\//i.test(c.resumeUrl || ''));
+    for (let i = 0; i < needFetch.length; i += 5) {
+      await Promise.all(needFetch.slice(i, i + 5).map(async (c) => {
+        const r = await fetchResumeText(c.resumeUrl);
+        if (r.text) {
+          c.resumeText = r.text;
+          await Candidate.updateOne({ _id: c._id }, { $set: { resumeText: r.text } });
+        } else {
+          fetchErrors[c._id.toString()] = r.error;
+        }
+      }));
+    }
+
     const resumes = candidates
       .filter((c) => c.resumeText)
       .map((c) => ({ id: c._id.toString(), resume_text: c.resumeText }));
+    const unreadable = Object.entries(fetchErrors).map(([id, error]) => ({ candidateId: id, score: null, error }));
 
     if (resumes.length === 0) {
-      return res.status(200).json({ success: true, count: 0, data: [], message: 'No resume text available for selected candidates. Ensure resumes were uploaded/parsed.' });
+      return res.status(200).json({ success: true, count: unreadable.length, data: unreadable, message: unreadable.length ? undefined : 'No resume text available for selected candidates. Ensure resumes were uploaded/parsed.' });
     }
 
     try {
@@ -156,7 +175,7 @@ exports.analyzeBulk = async (req, res) => {
         error: r.error
       }));
 
-      return res.status(200).json({ success: true, count: data.length, data });
+      return res.status(200).json({ success: true, count: data.length + unreadable.length, data: [...data, ...unreadable] });
     } catch (analyzerErr) {
       console.error('Resume analyzer service error:', analyzerErr);
       return res.status(500).json({ success: false, message: `Resume analyzer failed: ${analyzerErr.message}` });

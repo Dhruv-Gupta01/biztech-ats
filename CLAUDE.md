@@ -267,7 +267,7 @@ All base paths mount under `/api`. Responses are `{ success, message, data? }`.
 | POST | `/api/candidates/:id/score` | `{skillScore, experienceScore}` |
 | POST | `/api/candidates/:id/interview-stage` | `{interviewer, rating, feedback}` |
 | POST | `/api/candidates/:id/analyze` | resume analyzer |
-| POST | `/api/candidates/analyze-bulk` | `{candidateIds[]}` (max 100 per request; the pool sends chunks of 20); scores against the role's JD plus its `criteria` / `jdWeight` |
+| POST | `/api/candidates/analyze-bulk` | `{candidateIds[]}` (max 100 per request; the pool sends chunks of 20); candidates with only a Google Drive `resumeUrl` have it fetched and read first (`services/resumeFetchService.js`, text cached in `resumeText`); scores against the role's JD plus its `criteria` / `jdWeight` |
 | POST | `/api/candidates/:id/calendly-status` | best-effort Calendly lookup |
 | PATCH | `/api/candidates/:id` | update fields |
 | DELETE | `/api/candidates/:id` | hard delete |

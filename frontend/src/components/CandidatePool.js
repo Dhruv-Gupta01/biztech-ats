@@ -688,6 +688,7 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
     let analyzed = 0;
     let noResume = 0;
     let failed = 0;
+    const reasons = new Set();
     let stopMsg = '';
     try {
       for (let i = 0; i < ids.length; i += ANALYZE_CHUNK) {
@@ -705,7 +706,7 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
         noResume += chunk.length - data.length;
         const scoreMap = {};
         for (const item of data) {
-          if (item.score == null) { failed += 1; continue; }
+          if (item.score == null) { failed += 1; if (item.error) reasons.add(typeof item.error === 'string' ? item.error : 'scoring error'); continue; }
           analyzed += 1;
           scoreMap[item.candidateId] = { score: item.score, breakdown: item.breakdown };
         }
@@ -714,7 +715,7 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
       }
       const parts = [];
       if (noResume) parts.push(`${noResume} had no parsed resume text`);
-      if (failed) parts.push(`${failed} failed to score`);
+      if (failed) parts.push(`${failed} could not be scored${reasons.size ? ` (${[...reasons].slice(0, 2).join('; ')})` : ''}`);
       if (stopMsg) parts.push(`stopped early: ${stopMsg}`);
       if (parts.length) setAnalyzerError(`Scored ${analyzed} of ${ids.length}. ${parts.join('; ')}.`);
     } finally {
@@ -883,7 +884,7 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
         <button className="btn-secondary" onClick={downloadSampleCSV}>Download Sample CSV</button>
         <input ref={csvInputRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleImportFile} />
         <button className="btn-primary" onClick={triggerImport} disabled={importing}>{importing ? 'Importing...' : '⭱ Import CSV'}</button>
-        <button className="btn-secondary" onClick={runBulkAnalyze} disabled={analyzing || !filters.roleCode || selectedIds.length === 0} title={!filters.roleCode ? 'Select a specific Role Code' : ''}>{analyzing ? `Analyzing ${analyzeProgress}...` : 'Resume Analyzer'}</button>
+        <button className="btn-secondary" onClick={runBulkAnalyze} disabled={analyzing || selectedIds.length === 0} title="Scores the selected candidates against their role's JD and criteria. They must share one role code, and that role needs a job description (Roles & Codes).">{analyzing ? `Analyzing ${analyzeProgress}...` : 'Resume Analyzer'}</button>
         <button className="btn-secondary" onClick={saveAnalyzerScores} disabled={selectedIds.length === 0 || Object.keys(analyzerScores).length === 0} title="Save analyzer scores for selected candidates">💾 Save Scores</button>
         {freelanceMode && (
           <button
