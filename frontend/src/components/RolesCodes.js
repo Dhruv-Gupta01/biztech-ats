@@ -1,9 +1,44 @@
 import React, { useEffect, useState } from 'react';
-import { fetchRoles, createRole, deleteRole, fetchRetentionStatus, runRetentionNow } from '../api/api';
+import { fetchRoles, createRole, updateRole, deleteRole, fetchRetentionStatus, runRetentionNow } from '../api/api';
 import { isFreelanceRoleCode, isMedicalRoleCode, typeLabel } from '../utils/employment';
 import { useEmploymentTypes } from '../contexts/EmploymentTypesContext';
 
-const emptyForm = { code: '', title: '', department: '', description: '', empType: 'Full-Time', openings: 1, skills: '', minExperience: '', notNegotiable: false };
+const emptyForm = { code: '', title: '', department: '', description: '', empType: 'Full-Time', openings: 1, skills: '', minExperience: '', notNegotiable: false, criteria: [{ text: '', weight: '' }], jdWeight: '' };
+
+// Weighted scoring rubric used by the Resume Analyzer for this role. Weights are normalized by
+// the analyzer, so they don't need to sum to 100. Empty = one holistic score against the JD.
+function CriteriaEditor({ criteria, jdWeight, onChange }) {
+  const rows = criteria.length ? criteria : [{ text: '', weight: '' }];
+  const setRows = (next) => onChange({ criteria: next, jdWeight });
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 12 }}>
+      <strong style={{ fontSize: 13 }}>Weighted scoring criteria (optional)</strong>
+      <p style={{ fontSize: 12, color: 'var(--text-500)', margin: '4px 0 8px' }}>
+        Add specific requirements with a weight each, e.g. "4 to 7 years building production systems" with weight 40. The Resume Analyzer scores every resume for this role as a weighted average of how well it meets each criterion. Weights don't need to sum to 100. Leave empty for the default single score against the JD.
+      </p>
+      {rows.map((r, i) => (
+        <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+          <input placeholder="Criterion" maxLength={500} value={r.text} style={{ flex: 1 }} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))} />
+          <input type="number" min="1" placeholder="Weight" value={r.weight} style={{ width: 90 }} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, weight: e.target.value } : x)))} />
+          <button type="button" className="btn-secondary" title="Remove criterion" onClick={() => setRows(rows.length > 1 ? rows.filter((_, j) => j !== i) : [{ text: '', weight: '' }])}>✕</button>
+        </div>
+      ))}
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <button type="button" className="btn-secondary" disabled={rows.length >= 20} onClick={() => setRows([...rows, { text: '', weight: '' }])}>+ Add criterion</button>
+        <label style={{ fontSize: 13 }}>JD weight (optional){' '}
+          <input type="number" min="0" placeholder="0" value={jdWeight} style={{ width: 80 }} title="Weight of the model's overall fit to the whole job description, counted as one more entry in the weighted average" onChange={(e) => onChange({ criteria, jdWeight: e.target.value })} />
+        </label>
+      </div>
+    </div>
+  );
+}
+
+// Drops blank rows and checks every filled row has a weight > 0; returns { criteria } or { error }.
+function cleanCriteria(rows) {
+  const filled = rows.filter((r) => String(r.text || '').trim());
+  if (filled.some((r) => !(Number(r.weight) > 0))) return { error: 'Every criterion needs a weight greater than 0.' };
+  return { criteria: filled.map((r) => ({ text: r.text.trim(), weight: Number(r.weight) })) };
+}
 
 function RolesCodes() {
   const [roles, setRoles] = useState([]);
@@ -57,8 +92,11 @@ function RolesCodes() {
     setNotice('');
     if (!form.code || !form.title) return;
 
+    const crit = cleanCriteria(form.criteria);
+    if (crit.error) { setError(crit.error); return; }
+
     try {
-      const res = await createRole(form);
+      const res = await createRole({ ...form, criteria: crit.criteria, jdWeight: Number(form.jdWeight) || 0 });
       setRoles((prev) => [res.data, ...prev]);
       setForm(emptyForm);
       const linkedinMsg = res.linkedin && res.linkedin.posted ? 'LinkedIn ✅' : `LinkedIn skipped (${res.linkedin ? res.linkedin.reason : 'n/a'})`;
@@ -66,6 +104,49 @@ function RolesCodes() {
       setNotice(`✅ Role created and saved to the database. ${linkedinMsg}. ${naukriMsg}.`);
     } catch (err) {
       setError(`Could not create role: ${err.message}`);
+    }
+  };
+
+  // Edit a saved role. The code is the fixed identifier; every other field can change.
+  const [editing, setEditing] = useState(null);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState('');
+
+  const openEdit = (r) => {
+    setEditError('');
+    setEditing({
+      code: r.code,
+      title: r.title || '',
+      department: r.department || '',
+      description: r.description || '',
+      empType: r.empType || 'Full-Time',
+      status: r.status || 'Open',
+      openings: r.openings ?? 1,
+      skills: (r.skills || []).join(', '),
+      minExperience: r.minExperience || 0,
+      notNegotiable: r.notNegotiable || '',
+      criteria: (r.criteria || []).map((c) => ({ text: c.text, weight: c.weight })),
+      jdWeight: r.jdWeight || ''
+    });
+  };
+
+  const saveEdit = async (e) => {
+    e.preventDefault();
+    setEditError('');
+    if (!editing.title.trim() || !editing.department.trim()) { setEditError('Title and department are required.'); return; }
+    const crit = cleanCriteria(editing.criteria);
+    if (crit.error) { setEditError(crit.error); return; }
+    setEditSaving(true);
+    try {
+      const { code, criteria, ...rest } = editing;
+      const res = await updateRole(code, { ...rest, criteria: crit.criteria, jdWeight: Number(editing.jdWeight) || 0 });
+      setRoles((prev) => prev.map((r) => (r.code === code ? res.data : r)));
+      setEditing(null);
+      setNotice(`✅ Role ${code} updated.`);
+    } catch (err) {
+      setEditError(err.message || 'Could not update role.');
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -185,6 +266,9 @@ function RolesCodes() {
             <div><input placeholder="Required Skills (comma-separated, e.g. React, Node.js)" value={form.skills} onChange={(e) => setForm({ ...form, skills: e.target.value })} /></div>
             <div><input type="number" min="0" placeholder="Min Experience (yrs)" value={form.minExperience} onChange={(e) => setForm({ ...form, minExperience: e.target.value })} style={{ width: 110 }} /></div>
             <div><input placeholder="Not negotiable (e.g. min 5 years experience)" value={form.notNegotiable || ''} onChange={(e) => setForm({ ...form, notNegotiable: e.target.value })} /></div>
+          <div className="full">
+            <CriteriaEditor criteria={form.criteria} jdWeight={form.jdWeight} onChange={(v) => setForm({ ...form, ...v })} />
+          </div>
           <div className="full"><button className="btn-primary" type="submit">+ Add Role</button></div>
         </form>
       </div>
@@ -194,7 +278,7 @@ function RolesCodes() {
           <p style={{ padding: 20, color: 'var(--text-500)' }}>Loading roles...</p>
         ) : (
           <table>
-            <thead><tr><th>Code</th><th>Title</th><th>Department</th><th>Type</th><th>Skills</th><th>Min Exp</th><th>Not Negotiable</th><th>Openings</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Code</th><th>Title</th><th>Department</th><th>Type</th><th>Skills</th><th>Min Exp</th><th>Not Negotiable</th><th>Criteria</th><th>Openings</th><th>Status</th><th></th></tr></thead>
             <tbody>
               {roles.map((r) => (
                 <tr key={r.code}>
@@ -205,9 +289,15 @@ function RolesCodes() {
                   <td>{r.skills ? r.skills.join(', ') : ''}</td>
                   <td>{r.minExperience || 0}</td>
                   <td>{r.notNegotiable || '—'}</td>
+                  <td title={(r.criteria || []).map((c) => `${c.text} (${c.weight})`).join('\n') || undefined}>
+                    {(r.criteria || []).length ? `${r.criteria.length}${r.jdWeight ? ` + JD ${r.jdWeight}` : ''}` : '—'}
+                  </td>
                   <td>{r.openings}</td>
                   <td><span className="badge" style={{ background: r.status === 'Open' ? 'var(--green)' : r.status === 'On-Hold' ? 'var(--amber)' : '#6B7280' }}>{r.status}</span></td>
-                  <td><button className="btn-secondary" onClick={() => removeRole(r.code)}>Remove</button></td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    <button className="btn-secondary" style={{ marginRight: 6 }} onClick={() => openEdit(r)}>Edit</button>
+                    <button className="btn-secondary" onClick={() => removeRole(r.code)}>Remove</button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -302,6 +392,48 @@ function RolesCodes() {
           {retentionRunning ? 'Running...' : 'Run Cleanup Now'}
         </button>
       </div>
+
+      {/* Edit Role Modal */}
+      {editing && (
+        <div className="modal-overlay" onClick={() => !editSaving && setEditing(null)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ background: 'white', borderRadius: 12, padding: 24, width: '100%', maxWidth: 720, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
+            <h3 style={{ marginTop: 0, fontSize: 16 }}>Edit role <code>{editing.code}</code></h3>
+            {editError && <div className="alert alert-error" style={{ marginBottom: 12 }}>⚠️ {editError}</div>}
+            <form onSubmit={saveEdit} className="form-grid" style={{ marginBottom: 0 }}>
+              <div><input placeholder="Title" value={editing.title} onChange={(e) => setEditing({ ...editing, title: e.target.value })} /></div>
+              <div><input placeholder="Department" value={editing.department} onChange={(e) => setEditing({ ...editing, department: e.target.value })} /></div>
+              <div>
+                <select value={editing.empType} disabled={isFreelanceRoleCode(editing.code) || isMedicalRoleCode(editing.code)} onChange={(e) => setEditing({ ...editing, empType: e.target.value })}>
+                  {activeEmpTypes.map((et) => (
+                    <option key={et.name} value={et.name}>{et.label || et.name}</option>
+                  ))}
+                  {!activeEmpTypes.some((et) => et.name === editing.empType) && <option value={editing.empType}>{typeLabel(editing.empType)}</option>}
+                </select>
+                {(isFreelanceRoleCode(editing.code) || isMedicalRoleCode(editing.code)) && (
+                  <p style={{ fontSize: 11, color: 'var(--text-500)', margin: '4px 0 0' }}>Type is set by the role code prefix.</p>
+                )}
+              </div>
+              <div>
+                <select value={editing.status} onChange={(e) => setEditing({ ...editing, status: e.target.value })}>
+                  {['Open', 'On-Hold', 'Closed'].map((st) => <option key={st} value={st}>{st}</option>)}
+                </select>
+              </div>
+              <div><input type="number" min="0" placeholder="Openings" value={editing.openings} onChange={(e) => setEditing({ ...editing, openings: e.target.value })} /></div>
+              <div><input type="number" min="0" placeholder="Min Experience (yrs)" value={editing.minExperience} onChange={(e) => setEditing({ ...editing, minExperience: e.target.value })} /></div>
+              <div><input placeholder="Required Skills (comma-separated)" value={editing.skills} onChange={(e) => setEditing({ ...editing, skills: e.target.value })} /></div>
+              <div><input placeholder="Not negotiable (e.g. min 5 years experience)" value={editing.notNegotiable} onChange={(e) => setEditing({ ...editing, notNegotiable: e.target.value })} /></div>
+              <div className="full"><textarea placeholder="Job Description" rows={6} value={editing.description} onChange={(e) => setEditing({ ...editing, description: e.target.value })} /></div>
+              <div className="full">
+                <CriteriaEditor criteria={editing.criteria} jdWeight={editing.jdWeight} onChange={(v) => setEditing({ ...editing, ...v })} />
+              </div>
+              <div className="full" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button type="button" className="btn-secondary" onClick={() => setEditing(null)} disabled={editSaving}>Cancel</button>
+                <button type="submit" className="btn-primary" disabled={editSaving}>{editSaving ? 'Saving...' : 'Save changes'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Add Employment Type Modal */}
       {showEmpTypeModal && (

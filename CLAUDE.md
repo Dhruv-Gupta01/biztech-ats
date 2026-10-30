@@ -200,6 +200,8 @@ Routing is manual (`views[view] || Dashboard`), not a router library. `api.js` c
 | skills | [String], default [] | |
 | minExperience | Number, default 0, min 0 | |
 | notNegotiable | String, default '' | free-text (not boolean) |
+| criteria | [{text, weight>0}], default [] | optional weighted rubric the Resume Analyzer scores resumes against (max 20) |
+| jdWeight | Number, default 0, min 0 | weight of the model's overall fit-to-JD judgment, one more entry in the weighted average |
 
 Pre-save hook: `registry.getByName(empType)` must exist; if `isPrefixBased`, the role code must start with the registered prefix.
 
@@ -265,7 +267,7 @@ All base paths mount under `/api`. Responses are `{ success, message, data? }`.
 | POST | `/api/candidates/:id/score` | `{skillScore, experienceScore}` |
 | POST | `/api/candidates/:id/interview-stage` | `{interviewer, rating, feedback}` |
 | POST | `/api/candidates/:id/analyze` | resume analyzer |
-| POST | `/api/candidates/analyze-bulk` | `{candidateIds[]}` |
+| POST | `/api/candidates/analyze-bulk` | `{candidateIds[]}`; scores against the role's JD plus its `criteria` / `jdWeight` |
 | POST | `/api/candidates/:id/calendly-status` | best-effort Calendly lookup |
 | PATCH | `/api/candidates/:id` | update fields |
 | DELETE | `/api/candidates/:id` | hard delete |
@@ -276,7 +278,7 @@ All base paths mount under `/api`. Responses are `{ success, message, data? }`.
 |--------|----------|-------|
 | GET | `/api/roles` | list, sorted createdAt desc |
 | POST | `/api/roles` | create; attempts LinkedIn + Naukri post (no-op until creds set) |
-| PATCH | `/api/roles/:code` | update; prefix rule enforced |
+| PATCH | `/api/roles/:code` | edit any field except the code (title, department, description, empType, status, openings, skills, minExperience, notNegotiable, criteria, jdWeight); prefix rule enforced |
 | DELETE | `/api/roles/:code` | delete |
 
 ### Slack Groups (`slackRoutes.js`)

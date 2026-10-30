@@ -2,6 +2,7 @@ const Role = require('../models/Role');
 const { postJobToLinkedIn } = require('../services/linkedinService');
 const { postJobToNaukri } = require('../services/naukriService');
 const registry = require('../utils/employmentRegistry');
+const { normalizeCriteria, normalizeJdWeight } = require('../utils/criteria');
 
 // GET /api/roles
 exports.getRoles = async (req, res) => {
@@ -24,6 +25,9 @@ exports.createRole = async (req, res) => {
     if (!code || !title || !department) {
       return res.status(400).json({ success: false, message: 'code, title and department are required.' });
     }
+    const crit = normalizeCriteria(req.body.criteria);
+    const jdw = normalizeJdWeight(req.body.jdWeight);
+    if (crit.error || jdw.error) return res.status(400).json({ success: false, message: crit.error || jdw.error });
 
     const existing = await Role.findOne({ code: code.toUpperCase().trim() });
     if (existing) {
@@ -49,7 +53,9 @@ exports.createRole = async (req, res) => {
       openings: Number(openings) || 1,
       skills: skillsArray,
       minExperience: Number(minExperience) || 0,
-      notNegotiable: notNegotiable != null ? String(notNegotiable) : ''
+      notNegotiable: notNegotiable != null ? String(notNegotiable) : '',
+      criteria: crit.criteria,
+      jdWeight: jdw.jdWeight
     });
 
     const [linkedin, naukri] = await Promise.all([
@@ -78,15 +84,40 @@ exports.createRole = async (req, res) => {
 };
 
 // PATCH /api/roles/:code
+// Any field except the code itself can be edited (the code is what candidates, Slack
+// mappings and forms point at, so it is the fixed identifier).
 exports.updateRole = async (req, res) => {
   try {
-    const updates = { ...req.body };
-    if (updates.skills && !Array.isArray(updates.skills)) {
-      updates.skills = String(updates.skills).split(',').map((s) => s.trim()).filter(Boolean);
+    const body = req.body || {};
+    const updates = {};
+    ['title', 'department', 'description'].forEach((f) => {
+      if (body[f] !== undefined) updates[f] = String(body[f]);
+    });
+    if (updates.title !== undefined && !updates.title.trim()) return res.status(400).json({ success: false, message: 'Title cannot be empty.' });
+    if (updates.department !== undefined && !updates.department.trim()) return res.status(400).json({ success: false, message: 'Department cannot be empty.' });
+
+    if (body.skills !== undefined) {
+      updates.skills = Array.isArray(body.skills) ? body.skills : String(body.skills).split(',').map((s) => s.trim()).filter(Boolean);
     }
-    if (updates.minExperience !== undefined) updates.minExperience = Number(updates.minExperience);
-    if (updates.openings !== undefined) updates.openings = Number(updates.openings);
-    if (updates.notNegotiable !== undefined) updates.notNegotiable = Boolean(updates.notNegotiable);
+    if (body.interviewStages !== undefined && Array.isArray(body.interviewStages)) updates.interviewStages = body.interviewStages;
+    if (body.minExperience !== undefined) updates.minExperience = Number(body.minExperience) || 0;
+    if (body.openings !== undefined) updates.openings = Number(body.openings) || 0;
+    // notNegotiable is free text on the Role schema (not a boolean).
+    if (body.notNegotiable !== undefined) updates.notNegotiable = body.notNegotiable == null ? '' : String(body.notNegotiable);
+    if (body.status !== undefined) {
+      if (!['Open', 'On-Hold', 'Closed'].includes(body.status)) return res.status(400).json({ success: false, message: 'Status must be Open, On-Hold or Closed.' });
+      updates.status = body.status;
+    }
+    if (body.criteria !== undefined) {
+      const crit = normalizeCriteria(body.criteria);
+      if (crit.error) return res.status(400).json({ success: false, message: crit.error });
+      updates.criteria = crit.criteria;
+    }
+    if (body.jdWeight !== undefined) {
+      const jdw = normalizeJdWeight(body.jdWeight);
+      if (jdw.error) return res.status(400).json({ success: false, message: jdw.error });
+      updates.jdWeight = jdw.jdWeight;
+    }
 
     const code = req.params.code.toUpperCase().trim();
     const prefixType = registry.resolveByPrefix(code);
@@ -94,6 +125,9 @@ exports.updateRole = async (req, res) => {
     // employment type, force that type regardless of what the request body says.
     if (prefixType) {
       updates.empType = prefixType;
+    } else if (body.empType !== undefined) {
+      if (!registry.isValidName(body.empType)) return res.status(400).json({ success: false, message: `Employment type "${body.empType}" is not registered.` });
+      updates.empType = body.empType;
     }
 
     const role = await Role.findOneAndUpdate(

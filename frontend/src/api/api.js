@@ -101,11 +101,11 @@ export async function scoreCandidate(id, payload) {
 export async function analyzeCandidate(id) {
   return request(`${BASE_URL}/candidates/${id}/analyze`, { method: 'POST' });
 }
-export async function analyzeCandidatesBulk(candidateIds = [], criteria = [], jdWeight = 0) {
+export async function analyzeCandidatesBulk(candidateIds = []) {
   return request(`${BASE_URL}/candidates/analyze-bulk`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ candidateIds, criteria, jdWeight })
+    body: JSON.stringify({ candidateIds })
   });
 }
 
@@ -129,6 +129,14 @@ export async function fetchRoles() {
 export async function createRole(payload) {
   return request(`${BASE_URL}/roles`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateRole(code, payload) {
+  return request(`${BASE_URL}/roles/${encodeURIComponent(code)}`, {
+    method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });

@@ -12,7 +12,18 @@ const RoleSchema = new mongoose.Schema(
     interviewStages: { type: [String], default: ['Recruiter Screen', 'Technical', 'Hiring Manager'] },
     skills: { type: [String], default: [] },
     minExperience: { type: Number, default: 0, min: 0 },
-    notNegotiable: { type: String, default: '' }
+    notNegotiable: { type: String, default: '' },
+    // Optional weighted rubric the Resume Analyzer scores resumes against, alongside the JD.
+    criteria: {
+      type: [{
+        _id: false,
+        text: { type: String, required: true, trim: true },
+        weight: { type: Number, required: true, min: 0 }
+      }],
+      default: []
+    },
+    // Weight of the model's holistic fit-to-JD judgment, as one more entry in the weighted average.
+    jdWeight: { type: Number, default: 0, min: 0 }
   },
   { timestamps: true }
 );

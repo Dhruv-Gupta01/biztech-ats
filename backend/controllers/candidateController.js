@@ -114,22 +114,6 @@ exports.analyzeBulk = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Please select candidates to analyze.' });
     }
 
-    // Optional weighted rubric: blank rows are dropped, weights are normalized by the analyzer.
-    const rawCriteria = Array.isArray(req.body.criteria) ? req.body.criteria : [];
-    const criteria = rawCriteria
-      .map((c) => ({ text: String((c && c.text) || '').trim(), weight: Number(c && c.weight) }))
-      .filter((c) => c.text && c.weight > 0);
-    if (rawCriteria.some((c) => c && String(c.text || '').trim() && !(Number(c.weight) > 0))) {
-      return res.status(400).json({ success: false, message: 'Every criterion needs a weight greater than 0.' });
-    }
-    if (criteria.length > 20 || criteria.some((c) => c.text.length > 500)) {
-      return res.status(400).json({ success: false, message: 'Use at most 20 criteria, each under 500 characters.' });
-    }
-    const jdWeight = Number(req.body.jdWeight) || 0;
-    if (jdWeight < 0) {
-      return res.status(400).json({ success: false, message: 'JD weight cannot be negative.' });
-    }
-
     const candidates = await Candidate.find({ _id: { $in: candidateIds } }).sort({ createdAt: -1 });
     if (candidates.length === 0) {
       return res.status(200).json({ success: true, count: 0, data: [] });
@@ -157,11 +141,11 @@ exports.analyzeBulk = async (req, res) => {
     }
 
     try {
-      const results = await scoreResumes(role.description, resumes, criteria, jdWeight);
+      const results = await scoreResumes(role.description, resumes, role.criteria || [], role.jdWeight || 0);
       const data = results.map((r) => ({
         candidateId: r.id,
         score: r.error ? null : Number((r.result.score / 10).toFixed(1)),
-        // Per-criterion scores stay on the analyzer's 0-100 scale; only present when a rubric was used.
+        // Per-criterion scores stay on the analyzer's 0-100 scale; only present when the role has a rubric.
         breakdown: r.error ? undefined : r.result.criteria_breakdown,
         error: r.error
       }));
