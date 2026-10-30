@@ -838,7 +838,8 @@ exports.bulkUploadResumes = async (req, res) => {
         const candidate = await Candidate.create({
           fullName,
           email: email.toLowerCase().trim(),
-          phone: phone || '',
+          // phone is required on the schema; a resume with no readable number is stored as N/A (same as the sheet imports)
+          phone: phone || 'N/A',
           location: parsedData.location || '',
           roleCode: roleCode.toUpperCase().trim(),
           employmentType: roleCode.toUpperCase().trim().startsWith('F')

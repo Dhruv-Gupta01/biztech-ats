@@ -30,17 +30,24 @@ const HEADER_MAP = {
   'Email Address': 'email',
   'Phone': 'phone',
   'Phone Number': 'phone',
+  'Contact': 'phone',
+  'Mobile': 'phone',
   'Location': 'location',
+  'Current Location': 'location',
   'Role Code': 'roleCode',
   'Role': 'roleCode',
   'Employment Type': 'employmentType',
   'Type': 'employmentType',
   'Years of Experience': 'yearsOfExperience',
   'Experience': 'yearsOfExperience',
+  'Total Years of Professional Software Development Experience': 'yearsOfExperience',
   'Notice Period': 'noticePeriod',
   'Current CTC': 'ctcCurrent',
   'Expected CTC': 'ctcExpected',
   'Skills': 'skills',
+  'Which programming languages do you have professional production experience in?': 'skills',
+  'Resume link': 'resumeUrl',
+  'Resume Link': 'resumeUrl',
   'Status': 'status',
   'Source': 'source',
   'Designation': 'designation',
@@ -63,6 +70,24 @@ function normalizeHeaders(records) {
   });
 }
 
+// Experience can arrive as a plain number or a form answer such as "3-5 years" / "10+ years";
+// a range counts as its lower bound. Returns '' when blank so the required check still fires.
+function parseYears(raw) {
+  const str = String(raw === undefined || raw === null ? '' : raw).trim();
+  if (!str) return '';
+  const m = str.match(/\d+(\.\d+)?/);
+  return m ? Number(m[0]) : 0;
+}
+
+// Form-sheet exports can shift cells under the wrong header, so if the resume-link column does not
+// hold a link, fall back to the first link found anywhere in the row.
+function findResumeUrl(row) {
+  const isUrl = (v) => /^https?:\/\/\S+$/i.test(String(v || '').trim());
+  if (isUrl(row.resumeUrl)) return row.resumeUrl.trim();
+  const hit = Object.values(row).find(isUrl);
+  return hit ? hit.trim() : '';
+}
+
 function parseCsv(text) {
   let records;
   try {
@@ -70,7 +95,8 @@ function parseCsv(text) {
       columns: true,
       skip_empty_lines: true,
       trim: true,
-      delimiter: ','
+      delimiter: ',',
+      relax_column_count: true
     });
   } catch (err) {
     records = [];
@@ -83,7 +109,8 @@ function parseCsv(text) {
         columns: true,
         skip_empty_lines: true,
         trim: true,
-        delimiter: '\t'
+        delimiter: '\t',
+        relax_column_count: true
       });
     } catch (err) {
       records = [];
@@ -99,8 +126,9 @@ function parseCsv(text) {
 //   designation, company, education
 // - skills: semicolon-separated within the cell, e.g. "React;Node.js;MongoDB"
 // - employmentType/status: invalid or blank values fall back to safe defaults
-// - resumeUrl is intentionally not a column — bulk-imported candidates have no
-//   uploaded PDF; resumeUrl stays blank for them (schema allows this)
+// - skills: also accepts comma-separated (e.g. a form's "languages" answer)
+// - resumeUrl: taken from a "Resume link" column (or any link in the row); bulk-imported candidates
+//   have no uploaded PDF, so the Resume Analyzer reads the Drive link instead. Blank is allowed.
 
 // POST /api/candidates/bulk-import
 exports.bulkImportCandidates = async (req, res) => {
@@ -130,7 +158,7 @@ exports.bulkImportCandidates = async (req, res) => {
       const email = (row.email || '').trim().toLowerCase();
       const phone = (row.phone || '').trim();
       const roleCode = (row.roleCode || '').trim().toUpperCase();
-      const yearsOfExperience = row.yearsOfExperience;
+      const yearsOfExperience = parseYears(row.yearsOfExperience);
 
       if (!fullName || !email || !phone || !roleCode || yearsOfExperience === undefined || yearsOfExperience === '') {
         results.skippedCount++;
@@ -149,7 +177,7 @@ exports.bulkImportCandidates = async (req, res) => {
         ? registry.resolveByPrefix(roleCode)
         : (registry.isValidName(row.employmentType) ? row.employmentType : registry.getDefaultName());
       const status = VALID_STATUSES.includes(row.status) ? row.status : 'Information Form Response';
-      const skills = row.skills ? row.skills.split(';').map((s) => s.trim()).filter(Boolean) : [];
+      const skills = row.skills ? row.skills.split(/[;,]/).map((s) => s.trim()).filter(Boolean) : [];
 
       try {
         await Candidate.create({
@@ -167,7 +195,7 @@ exports.bulkImportCandidates = async (req, res) => {
           designation: row.designation || '',
           company: row.company || '',
           education: row.education || '',
-          resumeUrl: '',
+          resumeUrl: findResumeUrl(row),
           status,
           source: row.source || 'CSV Import'
         });
@@ -229,7 +257,7 @@ exports.bulkImportWithRole = async (req, res) => {
       const fullName = (row.fullName || '').trim();
       const email = (row.email || '').trim().toLowerCase();
       const phone = (row.phone || '').trim();
-      const yearsOfExperience = row.yearsOfExperience;
+      const yearsOfExperience = parseYears(row.yearsOfExperience);
 
       if (!fullName || !email || !phone || yearsOfExperience === undefined || yearsOfExperience === '') {
         results.skippedCount++;
@@ -246,9 +274,9 @@ exports.bulkImportWithRole = async (req, res) => {
 
       const employmentType = registry.resolveByPrefix(roleCode.toUpperCase().trim())
         ? registry.resolveByPrefix(roleCode.toUpperCase().trim())
-        : (registry.isValidName(row.employmentType) ? row.employmentType : registry.getDefaultName());
+        : (registry.isValidName(row.employmentType) ? row.employmentType : (role.empType || registry.getDefaultName()));
       const status = VALID_STATUSES.includes(row.status) ? row.status : 'Information Form Response';
-      const skills = row.skills ? row.skills.split(';').map((s) => s.trim()).filter(Boolean) : [];
+      const skills = row.skills ? row.skills.split(/[;,]/).map((s) => s.trim()).filter(Boolean) : [];
 
       try {
         await Candidate.create({
@@ -266,7 +294,7 @@ exports.bulkImportWithRole = async (req, res) => {
           designation: row.designation || '',
           company: row.company || '',
           education: row.education || '',
-          resumeUrl: '',
+          resumeUrl: findResumeUrl(row),
           status,
           source: row.source || 'CSV Import'
         });

@@ -75,7 +75,7 @@ function BulkResumeUpload() {
         (files || []).forEach((file) => formData.append('resumes', file));
         const res = await bulkUploadResumes(formData);
         if (res.success) {
-          setResult(res);
+          setResult(res.data || res); // CSV import nests its counts under data, PDF upload returns them at the top
           setFiles([]);
         } else {
           setError(res.message || 'Upload failed.');
@@ -86,7 +86,7 @@ function BulkResumeUpload() {
         formData.append('file', (files || [])[0]);
         const res = await bulkImportWithRole(formData);
         if (res.success) {
-          setResult(res);
+          setResult(res.data || res); // CSV import nests its counts under data, PDF upload returns them at the top
           setFiles([]);
         } else {
           setError(res.message || 'Import failed.');
