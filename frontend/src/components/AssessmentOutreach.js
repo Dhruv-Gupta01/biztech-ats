@@ -76,6 +76,8 @@ function AssessmentOutreach() {
   const [showTemplateManager, setShowTemplateManager] = useState(false);
   const [projects, setProjects] = useState(['Terminus', 'Snorkle', 'Alegion']);
   const [freelanceFilters, setFreelanceFilters] = useState(EMPTY_FREELANCE_FILTERS);
+  // Candidates already sent the Calendly link are left out by default so outreach doesn't repeat them.
+  const [hideCalendlySent, setHideCalendlySent] = useState(true);
   const [templateId, setTemplateId] = useState('');
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState(null);
@@ -213,10 +215,13 @@ function AssessmentOutreach() {
 
   const [shown, setShown] = useState(200); // render cap — thousands of DOM rows freeze the browser
   const filteredCandidates = useMemo(() => {
+    // Picking "Sent" in the Calendly Link Sent dropdown is an explicit request to see them, so it wins.
+    const wantsSent = freelanceMode && freelanceFilters.calendlyLinkSent === 'Sent';
+    const pool = hideCalendlySent && !wantsSent ? candidates.filter((c) => c.calendlyLinkSent !== 'Sent') : candidates;
     if (freelanceMode) {
       const f = freelanceFilters;
       // An F-prefixed role code is FREELANCE CODING regardless of stored employmentType.
-      let data = candidates.filter(isFreelanceCandidate);
+      let data = pool.filter(isFreelanceCandidate);
       if (f.roleCode) data = data.filter((c) => c.roleCode === f.roleCode);
       // Saved analyzer score (0-10): >=, <=, or between (inclusive). Unscored candidates never match a score filter.
       const lo = f.analyzerMode !== 'lte' && f.analyzerMinScore !== '' ? Number(f.analyzerMinScore) : null;
@@ -242,11 +247,21 @@ function AssessmentOutreach() {
       if (f.projectStatus) data = data.filter((c) => c.projectStatus === f.projectStatus);
       return data;
     }
-    return candidates.filter((c) =>
+    return pool.filter((c) =>
       (!empTypeFilter || effectiveEmploymentType(c) === empTypeFilter) &&
       (!roleFilter || c.roleCode === roleFilter) &&
       (!statusFilter || c.status === statusFilter));
-  }, [candidates, freelanceMode, empTypeFilter, roleFilter, statusFilter, freelanceFilters]);
+  }, [candidates, freelanceMode, empTypeFilter, roleFilter, statusFilter, freelanceFilters, hideCalendlySent]);
+
+  const calendlySentCount = useMemo(() => candidates.filter((c) => c.calendlyLinkSent === 'Sent').length, [candidates]);
+  const toggleHideCalendlySent = (hide) => {
+    setHideCalendlySent(hide);
+    // Anyone already ticked who is now hidden must not stay selected for a bulk send.
+    if (hide) {
+      const sent = new Set(candidates.filter((c) => c.calendlyLinkSent === 'Sent').map((c) => c._id));
+      setSelectedIds((prev) => prev.filter((id) => !sent.has(id)));
+    }
+  };
 
   const selectAllFiltered = () => setSelectedIds(filteredCandidates.map((c) => c._id));
 
@@ -360,6 +375,10 @@ function AssessmentOutreach() {
                 <span className="outreach-filters-sub">
                   Showing {filteredCandidates.length} of {candidates.length} candidate{candidates.length !== 1 ? 's' : ''}
                 </span>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 12.5, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={hideCalendlySent} onChange={(e) => toggleHideCalendlySent(e.target.checked)} />
+                  Hide candidates already sent the Calendly link ({calendlySentCount})
+                </label>
               </div>
               <div className="outreach-filters-actions">
                 <button className="btn-secondary" onClick={selectAllFiltered} disabled={filteredCandidates.length === 0}>
