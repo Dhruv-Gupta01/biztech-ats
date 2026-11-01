@@ -57,7 +57,7 @@ const PROJECT_STATUS_OPTIONS = ['On Hold', 'Complete', 'Not Active', 'In Pipelin
 // field on freelanceFilters so the UI, the filter logic and the reset all stay
 // in sync without repeating the list three times.
 const EMPTY_FREELANCE_FILTERS = {
-  roleCode: '', analyzerMinScore: '', screeningInterview: '', calendlyLinkSent: '',
+  roleCode: '', analyzerMode: 'gte', analyzerMinScore: '', analyzerMaxScore: '', screeningInterview: '', calendlyLinkSent: '',
   calendlyLinkStatus: '', ndaIca: '', slackStatus: '', bootcampAttempts: '',
   bootcampStatus: '', onboarding: '', project: '', projectStatus: ''
 };
@@ -218,7 +218,18 @@ function AssessmentOutreach() {
       // An F-prefixed role code is FREELANCE CODING regardless of stored employmentType.
       let data = candidates.filter(isFreelanceCandidate);
       if (f.roleCode) data = data.filter((c) => c.roleCode === f.roleCode);
-      if (f.analyzerMinScore) data = data.filter((c) => Number(c.score?.suitabilityRating) >= Number(f.analyzerMinScore));
+      // Saved analyzer score (0-10): >=, <=, or between (inclusive). Unscored candidates never match a score filter.
+      const lo = f.analyzerMode !== 'lte' && f.analyzerMinScore !== '' ? Number(f.analyzerMinScore) : null;
+      const hi = f.analyzerMode !== 'gte' && f.analyzerMaxScore !== '' ? Number(f.analyzerMaxScore) : null;
+      if (lo !== null || hi !== null) {
+        const [min, max] = lo !== null && hi !== null && lo > hi ? [hi, lo] : [lo, hi];
+        data = data.filter((c) => {
+          const raw = c.score?.suitabilityRating;
+          if (raw == null || raw === '' || !Number.isFinite(Number(raw))) return false;
+          const v = Number(raw);
+          return (min === null || v >= min) && (max === null || v <= max);
+        });
+      }
       if (f.screeningInterview) data = data.filter((c) => c.screeningInterview === f.screeningInterview);
       if (f.calendlyLinkSent) data = data.filter((c) => c.calendlyLinkSent === f.calendlyLinkSent);
       if (f.calendlyLinkStatus) data = data.filter((c) => c.calendlyLinkStatus === f.calendlyLinkStatus);
@@ -264,8 +275,10 @@ function AssessmentOutreach() {
     setFreelanceFilters(EMPTY_FREELANCE_FILTERS);
   };
 
+  // The score mode dropdown always has a value, and min/max together count as one filter.
+  const { analyzerMode, analyzerMinScore, analyzerMaxScore, ...otherFreelanceFilters } = freelanceFilters;
   const activeFilterCount = freelanceMode
-    ? Object.values(freelanceFilters).filter(Boolean).length
+    ? Object.values(otherFreelanceFilters).filter(Boolean).length + (analyzerMinScore !== '' || analyzerMaxScore !== '' ? 1 : 0)
     : [empTypeFilter, roleFilter, statusFilter].filter(Boolean).length;
 
   const roleOptionLabel = (r) => `${r.code} — ${r.title}${isFreelanceRoleCode(r.code) ? ' · Freelance Coding' : ''}`;
@@ -400,15 +413,38 @@ function AssessmentOutreach() {
                       {roles.map((r) => <option key={r.code} value={r.code}>{roleOptionLabel(r)}</option>)}
                     </select>
                   </div>
-                  <div className="outreach-filter-field">
-                    <label>Resume Analyzer Status (score ≥)</label>
-                    <input
-                      type="number" min="0" max="10"
-                      className={freelanceFilters.analyzerMinScore ? 'is-set' : ''}
-                      placeholder="e.g. 7"
-                      value={freelanceFilters.analyzerMinScore}
-                      onChange={(e) => setFreelanceFilters({ ...freelanceFilters, analyzerMinScore: e.target.value })}
-                    />
+                  <div className={`outreach-filter-field${(freelanceFilters.analyzerMinScore !== '' || freelanceFilters.analyzerMaxScore !== '') ? ' is-set' : ''}`}>
+                    <label>Resume Analyzer Status (score, 0–10)</label>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <select
+                        value={freelanceFilters.analyzerMode}
+                        onChange={(e) => setFreelanceFilters({ ...freelanceFilters, analyzerMode: e.target.value })}
+                        style={{ flex: '0 0 auto', width: 'auto' }}
+                        aria-label="Score comparison"
+                      >
+                        <option value="gte">≥ at least</option>
+                        <option value="lte">≤ at most</option>
+                        <option value="between">Between</option>
+                      </select>
+                      {freelanceFilters.analyzerMode !== 'lte' && (
+                        <input
+                          type="number" min="0" max="10" step="0.1"
+                          placeholder={freelanceFilters.analyzerMode === 'between' ? 'From, e.g. 4' : 'e.g. 7'}
+                          value={freelanceFilters.analyzerMinScore}
+                          onChange={(e) => setFreelanceFilters({ ...freelanceFilters, analyzerMinScore: e.target.value })}
+                          aria-label={freelanceFilters.analyzerMode === 'between' ? 'Score from' : 'Minimum score'}
+                        />
+                      )}
+                      {freelanceFilters.analyzerMode !== 'gte' && (
+                        <input
+                          type="number" min="0" max="10" step="0.1"
+                          placeholder={freelanceFilters.analyzerMode === 'between' ? 'To, e.g. 7' : 'e.g. 5'}
+                          value={freelanceFilters.analyzerMaxScore}
+                          onChange={(e) => setFreelanceFilters({ ...freelanceFilters, analyzerMaxScore: e.target.value })}
+                          aria-label={freelanceFilters.analyzerMode === 'between' ? 'Score to' : 'Maximum score'}
+                        />
+                      )}
+                    </div>
                   </div>
                   {freelanceOptionSets.map(({ key, label, options }) => (
                     <div key={key} className={`outreach-filter-field${freelanceFilters[key] ? ' is-set' : ''}`}>
