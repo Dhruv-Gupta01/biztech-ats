@@ -3,6 +3,7 @@ const Role = require('../models/Role');
 const GoogleForm = require('../models/GoogleForm');
 const OutreachAttachment = require('../models/OutreachAttachment');
 const { sendOutreachEmails } = require('../services/emailService');
+const { detectSignals, applyOutreachSignals } = require('../services/outreachSignals');
 
 async function buildFormLink(email, roleCode) {
   let form = null;
@@ -178,12 +179,23 @@ exports.sendOutreach = async (req, res) => {
     const sentCount = results.filter((r) => r.sent).length;
     const failedCount = results.length - sentCount;
 
+    // Mark Calendly / NDA-ICA / Slack columns from what was just sent. Best-effort: the emails are
+    // already out, so a failure here is logged and never turns the send into an error.
+    let updates = { detected: { calendly: false, ndaIca: false, slack: false }, modified: {}, candidates: [] };
+    try {
+      const detected = detectSignals({ subject, body, links: linkAttachments, files });
+      const applied = await applyOutreachSignals(results.filter((r) => r.sent).map((r) => r.email), detected);
+      updates = { detected, ...applied };
+    } catch (signalErr) {
+      console.error('Outreach status update failed:', signalErr);
+    }
+
     return res.status(200).json({
       success: true,
       message: failedCount === 0
         ? `Sent to all ${sentCount} recipient(s).`
         : `Sent to ${sentCount} recipient(s), ${failedCount} failed.`,
-      data: { sentCount, failedCount, results }
+      data: { sentCount, failedCount, results, updates }
     });
   } catch (err) {
     console.error(err);

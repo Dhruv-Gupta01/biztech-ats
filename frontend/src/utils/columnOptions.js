@@ -59,7 +59,7 @@ export const getOptionsForColumn = (field, candidates = []) => {
     calendlyLinkSent: ['Sent', 'Not Sent'],
     calendlyLinkStatus: ['Booked', 'Not Booked'],
     ndaIca: ['Sent', 'Not Sent', 'Signed', 'Not Signed', 'Doubt', 'Not Interested'],
-    slackStatus: ['Joined', 'Not Joined', 'Not Interested'],
+    slackStatus: ['Invited', 'Joined', 'Not Joined', 'Not Interested'],
     bootcampAttempts: ['Attempt 1', 'Attempt 2', 'Attempt 3'],
     bootcampStatus: ['Pass', 'Fail', 'Full Fail', 'Not Active', 'Active', 'Direct to client'],
     onboarding: ['Sent', 'Not Sent', 'Not Interested', 'Done'],

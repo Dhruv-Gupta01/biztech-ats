@@ -153,10 +153,12 @@ Routing is manual (`views[view] || Dashboard`), not a router library. `api.js` c
 | resumeData | Buffer | raw PDF bytes (resume upload path) |
 | resumeText | String | parsed text |
 | screeningInterview | enum [Pass,Fail,Not Appeared,Rescheduled,Not interested,Referred to another position,Invited – not booked,Booked – no result yet,Appeared – result not recorded], default null | FREELANCE CODING/Contract columns |
-| calendlyLinkSent | enum [Sent,Not Sent], default null | |
+| calendlyLinkSent | enum [Sent,Not Sent], default null | set to Sent automatically when an outreach email carries a calendly.com link |
+| calendlyLinkSentAt | Date, default null | when that email went out; the Calendly sync checks recent sends first |
+| calendlyCheckedAt | Date, default null | last Calendly sync lookup (rotation bookkeeping) |
 | calendlyLinkStatus | enum [Booked,Not Booked], default null | |
-| ndaIca | enum [Sent,Not Sent,Signed,Not Signed,Doubt,Not Interested], default null | |
-| slackStatus | enum [Joined,Not Joined,Not Interested], default null | |
+| ndaIca | enum [Sent,Not Sent,Signed,Not Signed,Doubt,Not Interested], default null | set to Sent automatically from NDA/ICA outreach emails (only from blank / Not Sent) |
+| slackStatus | enum [Invited,Joined,Not Joined,Not Interested], default null | Invited is set automatically when an outreach email carries a slack.com invite link (only from blank) |
 | bootcampAttempts | enum [Attempt 1,Attempt 2,Attempt 3], default null | |
 | bootcampStatus | enum [Pass,Fail,Full Fail,Not Active,Active,Direct to client], default null | |
 | onboarding | enum [Sent,Not Sent,Not Interested,Done], default null | |
@@ -268,6 +270,7 @@ All base paths mount under `/api`. Responses are `{ success, message, data? }`.
 | POST | `/api/candidates/:id/interview-stage` | `{interviewer, rating, feedback}` |
 | POST | `/api/candidates/:id/analyze` | resume analyzer |
 | POST | `/api/candidates/analyze-bulk` | `{candidateIds[]}` (max 100 per request; the pool sends chunks of 20); candidates with only a Google Drive `resumeUrl` have it fetched and read first (`services/resumeFetchService.js`, text cached in `resumeText`); scores against the role's JD plus its `criteria` / `jdWeight` |
+| GET | `/api/candidates/status-updates` | `?since=<ISO>` → calendlyLinkSent/SentAt/Status, ndaIca, slackStatus of candidates changed after `since` (+ `serverTime`); the Outreach page polls it every 30s |
 | POST | `/api/candidates/:id/calendly-status` | best-effort Calendly lookup |
 | PATCH | `/api/candidates/:id` | update fields |
 | DELETE | `/api/candidates/:id` | hard delete |
@@ -301,7 +304,7 @@ All base paths mount under `/api`. Responses are `{ success, message, data? }`.
 | POST | `/api/outreach/attachments` | multipart `files[]` (≤10, ≤10MB each, ≤30MB total) |
 | GET | `/api/outreach/attachments` | list metadata |
 | DELETE | `/api/outreach/attachments/:id` | delete stored file |
-| POST | `/api/outreach/send` | `{candidateIds[], subject, body, attachments[], attachmentIds[]}` |
+| POST | `/api/outreach/send` | `{candidateIds[], subject, body, attachments[], attachmentIds[]}`; after sending, `services/outreachSignals.js` marks the emailed candidates from the email content (calendly.com link → Calendly Link Sent; NDA / ICA / non-disclosure / contractor agreement in subject, body or file/link name → NDA & ICA Sent; slack.com link → Slack Invited) and returns them in `data.updates` |
 
 ### Email Templates (`emailTemplateRoutes.js`) — public, no auth middleware
 | Method | Endpoint | Notes |
@@ -382,6 +385,7 @@ Env var **names** (never values — secrets are gitignored):
 |----------|-----|------------|
 | `0 2 * * *` | retention sweep | `RETENTION_ENABLED !== 'true'` |
 | `0 9 * * *` | Naukri CSV ETL import | `ETL_ENABLED !== 'true'` or no Drive creds |
+| `*/10 * * * *` | Calendly Booked / Not Booked sync (`services/calendlySyncService.js`): recent un-booked sends + 100 least-recently-checked | Calendly not configured |
 
 ## 7. Frontend Views & Components
 

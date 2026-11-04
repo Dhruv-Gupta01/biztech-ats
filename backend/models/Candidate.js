@@ -31,9 +31,13 @@ const candidateSchema = new mongoose.Schema({
   // undefined/null on these optional paths, and the UI stores null for "—".
   screeningInterview: { type: String, enum: ['Pass', 'Fail', 'Not Appeared', 'Rescheduled', 'Not interested', 'Referred to another position', 'Invited – not booked', 'Booked – no result yet', 'Appeared – result not recorded'], default: null },
   calendlyLinkSent: { type: String, enum: ['Sent', 'Not Sent'], default: null },
+  // Set when an outreach email carrying a Calendly link goes out; the background Calendly sync checks recent sends first.
+  calendlyLinkSentAt: { type: Date, default: null },
+  // Last time the Calendly sync looked this person up (rotates through everyone whose link was sent).
+  calendlyCheckedAt: { type: Date, default: null },
   calendlyLinkStatus: { type: String, enum: ['Booked', 'Not Booked'], default: null },
   ndaIca: { type: String, enum: ['Sent', 'Not Sent', 'Signed', 'Not Signed', 'Doubt', 'Not Interested'], default: null },
-  slackStatus: { type: String, enum: ['Joined', 'Not Joined', 'Not Interested'], default: null },
+  slackStatus: { type: String, enum: ['Invited', 'Joined', 'Not Joined', 'Not Interested'], default: null },
   bootcampAttempts: { type: String, enum: ['Attempt 1', 'Attempt 2', 'Attempt 3'], default: null },
   bootcampStatus: { type: String, enum: ['Pass', 'Fail', 'Full Fail', 'Not Active', 'Active', 'Direct to client'], default: null },
   onboarding: { type: String, enum: ['Sent', 'Not Sent', 'Not Interested', 'Done'], default: null },

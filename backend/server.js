@@ -18,6 +18,7 @@ const statisticsRoutes = require('./routes/statisticsRoutes');
 const employmentTypeRoutes = require('./routes/employmentTypeRoutes');
 const employmentTypeRegistry = require('./utils/employmentRegistry');
 const { runRetentionCleanup } = require('./services/retentionService');
+const { syncCalendlyBookings } = require('./services/calendlySyncService');
 const { runNaukriEtl } = require('./services/naukriEtlService');
 
 const app = express();
@@ -74,6 +75,17 @@ cron.schedule('0 9 * * *', async () => {
     console.log('[NaukriEtl] Daily 9am run:', result);
   } catch (err) {
     console.error('[NaukriEtl] Daily 9am run failed:', err);
+  }
+});
+
+// Every 10 minutes: refresh Booked / Not Booked from Calendly for people whose link was sent. No-ops
+// (and logs nothing) unless CALENDLY_API_ENABLED=true with a token.
+cron.schedule('*/10 * * * *', async () => {
+  try {
+    const result = await syncCalendlyBookings();
+    if (result.ran && (result.updated || result.failed)) console.log('[CalendlySync]', result);
+  } catch (err) {
+    console.error('[CalendlySync] run failed:', err);
   }
 });
 

@@ -3,7 +3,7 @@ const { cacheGet } = require('../utils/responseCache');
 const router = express.Router();
 const upload = require('../middleware/upload');
 const uploadCSV = require('../middleware/uploadCSV');
-const { applyCandidate, getCandidates, getCandidateSources, getBootcampBatches, assignBootcampBatch, removeFromBootcampBatch, scoreCandidate, updateCandidate, deleteCandidate, recordInterviewStage, analyzeCandidate, analyzeBulk, getResume, bulkUploadResumes, checkCalendlyStatus } = require('../controllers/candidateController');
+const { applyCandidate, getCandidates, getCandidateSources, getBootcampBatches, assignBootcampBatch, removeFromBootcampBatch, scoreCandidate, updateCandidate, deleteCandidate, recordInterviewStage, analyzeCandidate, analyzeBulk, getStatusUpdates, getResume, bulkUploadResumes, checkCalendlyStatus } = require('../controllers/candidateController');
 const { parseResume } = require('../controllers/resumeController');
 const { bulkImportCandidates, bulkImportWithRole } = require('../controllers/bulkController');
 const { upload: uploadMiddleware, bulkUpload } = require('../middleware/upload');
@@ -14,6 +14,7 @@ router.post('/bulk-import-with-role', uploadCSV.single('file'), bulkImportWithRo
 router.post('/apply', uploadMiddleware.single('resume'), applyCandidate);
 router.post('/bulk-upload-resumes', bulkUpload.array('resumes', 50), bulkUploadResumes);
 router.get('/sources', getCandidateSources);
+router.get('/status-updates', getStatusUpdates);
 router.get('/bootcamp-batches', getBootcampBatches);
 router.post('/bootcamp-batches/assign', assignBootcampBatch);
 router.post('/bootcamp-batches/remove', removeFromBootcampBatch);

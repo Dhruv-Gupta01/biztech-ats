@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { fetchCandidates, fetchRoles, sendOutreachEmail, fetchEmailTemplates, fetchProjects, uploadOutreachAttachments, deleteOutreachAttachment, fetchOutreachAttachments } from '../api/api';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { fetchCandidates, fetchStatusUpdates, fetchRoles, sendOutreachEmail, fetchEmailTemplates, fetchProjects, uploadOutreachAttachments, deleteOutreachAttachment, fetchOutreachAttachments } from '../api/api';
 import TemplateManager from './TemplateManager';
 import {
   isFreelanceRoleCode, isFreelanceFilter, isFreelanceCandidate, isFreelanceLikeType, effectiveEmploymentType
@@ -47,7 +47,7 @@ const SCREENING_INTERVIEW_OPTIONS = ['Pass', 'Fail', 'Not Appeared', 'Reschedule
 const CALENDLY_SENT_OPTIONS = ['Sent', 'Not Sent'];
 const CALENDLY_STATUS_OPTIONS = ['Booked', 'Not Booked'];
 const NDA_ICA_OPTIONS = ['Sent', 'Not Sent', 'Signed', 'Not Signed', 'Doubt', 'Not Interested'];
-const SLACK_STATUS_OPTIONS = ['Joined', 'Not Joined', 'Not Interested'];
+const SLACK_STATUS_OPTIONS = ['Invited', 'Joined', 'Not Joined', 'Not Interested'];
 const BOOTCAMP_ATTEMPTS_OPTIONS = ['Attempt 1', 'Attempt 2', 'Attempt 3'];
 const BOOTCAMP_STATUS_OPTIONS = ['Pass', 'Fail', 'Full Fail', 'Not Active', 'Active', 'Direct to client'];
 const ONBOARDING_OPTIONS = ['Sent', 'Not Sent', 'Not Interested', 'Done'];
@@ -98,6 +98,41 @@ function AssessmentOutreach() {
   };
 
   const freelanceMode = isFreelanceFilter(empTypeFilter, roleFilter);
+
+  // Folds changed status fields (emails just sent, Calendly bookings) into the rows already on screen.
+  const mergeStatusUpdates = useCallback((rows) => {
+    if (!rows || rows.length === 0) return;
+    const byId = new Map(rows.map((r) => [r._id, r]));
+    setCandidates((prev) => prev.map((c) => (byId.has(c._id) ? { ...c, ...byId.get(c._id) } : c)));
+  }, []);
+
+  // Last point the page is known to be current to. Starts a little before the full load so a change
+  // made while the (slow) list was downloading is not missed.
+  const syncedUntil = useRef(new Date(Date.now() - 60000).toISOString());
+  const syncing = useRef(false);
+  const refreshStatuses = useCallback(async () => {
+    if (syncing.current) return;
+    syncing.current = true;
+    try {
+      const res = await fetchStatusUpdates(syncedUntil.current);
+      mergeStatusUpdates(res.data);
+      if (res.serverTime) syncedUntil.current = res.serverTime;
+    } catch (err) {
+      // Best-effort: the next tick tries again from the same point.
+    } finally {
+      syncing.current = false;
+    }
+  }, [mergeStatusUpdates]);
+
+  // Keep Calendly Link Sent / Status, NDA & ICA and Slack current without a page reload: every 30s while
+  // the tab is visible, and immediately when the recruiter comes back to it.
+  useEffect(() => {
+    if (loading) return undefined;
+    const tick = () => { if (document.visibilityState === 'visible') refreshStatuses(); };
+    const timer = setInterval(tick, 30000);
+    document.addEventListener('visibilitychange', tick);
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', tick); };
+  }, [loading, refreshStatuses]);
 
   useEffect(() => {
     Promise.all([fetchCandidates(), fetchRoles()])
@@ -332,6 +367,17 @@ function AssessmentOutreach() {
       const attachmentIds = [...files.map((f) => f._id), ...templateFileIds];
 
       const res = await sendOutreachEmail(selectedIds, template.subject, template.body, attachments, attachmentIds);
+      // The server has already marked Calendly / NDA-ICA / Slack from what was in the emails: show it now.
+      const upd = res.data.updates;
+      mergeStatusUpdates(upd && upd.candidates);
+      if (upd && upd.candidates && upd.candidates.length) {
+        const m = upd.modified || {};
+        const bits = [];
+        if (upd.detected && upd.detected.calendly) bits.push('Calendly link Sent');
+        if (m.ndaIca) bits.push(`NDA & ICA Sent (${m.ndaIca})`);
+        if (m.slackStatus) bits.push(`Slack Invited (${m.slackStatus})`);
+        if (bits.length) res.message = `${res.message} Marked: ${bits.join(', ')}.`;
+      }
       setSendResult({ ok: res.data.failedCount === 0, message: res.message, details: res.data.results });
     } catch (err) {
       setSendResult({ ok: false, message: err.message, details: [] });

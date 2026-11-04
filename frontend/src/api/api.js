@@ -109,6 +109,11 @@ export async function analyzeCandidatesBulk(candidateIds = []) {
   });
 }
 
+// GET /api/candidates/status-updates?since= — outreach status fields of candidates changed after `since`
+export async function fetchStatusUpdates(since) {
+  return request(`${BASE_URL}/candidates/status-updates?since=${encodeURIComponent(since)}`);
+}
+
 // POST /api/candidates/:id/calendly-status — best-effort Calendly lookup
 export async function checkCalendlyStatus(id) {
   return request(`${BASE_URL}/candidates/${id}/calendly-status`, { method: 'POST' });

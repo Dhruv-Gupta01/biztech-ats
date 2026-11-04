@@ -703,6 +703,27 @@ exports.checkCalendlyStatus = async (req, res) => {
   }
 };
 
+// GET /api/candidates/status-updates?since=<ISO>
+// Only the four outreach status fields of candidates changed after `since`, so the Outreach page can stay
+// current (emails just sent, Calendly bookings) without re-downloading the whole candidate list.
+exports.getStatusUpdates = async (req, res) => {
+  try {
+    const since = new Date(req.query.since);
+    if (Number.isNaN(since.getTime())) {
+      return res.status(400).json({ success: false, message: 'since must be an ISO date.' });
+    }
+    const serverTime = new Date().toISOString();
+    const data = await Candidate.find(
+      { updatedAt: { $gt: since } },
+      'calendlyLinkSent calendlyLinkSentAt calendlyLinkStatus ndaIca slackStatus updatedAt'
+    ).sort({ updatedAt: 1 }).limit(2000).lean();
+    return res.status(200).json({ success: true, count: data.length, serverTime, data });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Server error while fetching status updates.' });
+  }
+};
+
 exports.getResume = async (req, res) => {
   try {
     const candidate = await Candidate.findById(req.params.id);
