@@ -4,6 +4,7 @@
 //   1. people emailed in the last RECENT_DAYS who haven't booked yet (the ones a recruiter is waiting on), first, then
 //   2. the ROTATION_SIZE least-recently-checked people with a sent link, so cancellations and older
 //      sheet-imported rows get picked up over a few hours.
+// It only ever moves people towards Booked (or fills a blank); it never overwrites a stored Booked.
 // Calls are paced; on a 429 the run waits (Retry-After, else a minute) and carries on. Never throws.
 const Candidate = require('../models/Candidate');
 const { checkCalendlyStatus, calendlyConfigured } = require('./calendlyService');
@@ -51,7 +52,11 @@ async function syncCalendlyBookings({ paceMs = PACE_MS, rateLimitWaitMs = RATE_L
       if (r.available) {
         consecutiveFailures = 0;
         checkedIds.push(c._id);
-        if (r.status !== c.calendlyLinkStatus) {
+        // Calendly finding nothing under this email is not proof they never booked (they may have booked with
+        // another address, or before Calendly's records start), so a stored Booked is never downgraded here.
+        if (c.calendlyLinkStatus === 'Booked' && r.status !== 'Booked') {
+          summary.keptBooked = (summary.keptBooked || 0) + 1;
+        } else if (r.status !== c.calendlyLinkStatus) {
           // updateOne so the cached candidate list is dropped when a status really changes.
           await Candidate.updateOne({ _id: c._id }, { $set: { calendlyLinkStatus: r.status, updatedAt: new Date() } });
           summary.updated += 1;

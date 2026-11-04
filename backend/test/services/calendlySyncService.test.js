@@ -36,12 +36,23 @@ describe('syncCalendlyBookings', () => {
     expect(mockBulkWrite.mock.calls[0][0][0].updateMany.filter._id.$in).toEqual(['a', 'b']);
   });
 
-  it('records a cancellation (Booked -> Not Booked)', async () => {
+  it('never downgrades a stored Booked to Not Booked (Calendly not finding an email is not proof)', async () => {
     const b = { _id: 'b', email: 'b@x.com', calendlyLinkStatus: 'Booked' };
     mockFind.mockReturnValueOnce(query([])).mockReturnValueOnce(query([b]));
     mockCheck.mockResolvedValue({ available: true, status: 'Not Booked' });
-    await syncCalendlyBookings(FAST);
-    expect(mockUpdateOne.mock.calls[0][1].$set.calendlyLinkStatus).toBe('Not Booked');
+    const r = await syncCalendlyBookings(FAST);
+    expect(mockUpdateOne).not.toHaveBeenCalled();
+    expect(r).toMatchObject({ checked: 1, updated: 0, keptBooked: 1 });
+    expect(mockBulkWrite.mock.calls[0][0][0].updateMany.filter._id.$in).toEqual(['b']); // still counts as checked
+  });
+
+  it('upgrades Not Booked / blank to Booked and fills a blank with Not Booked', async () => {
+    const rows = [{ _id: 'a', email: 'a@x.com', calendlyLinkStatus: 'Not Booked' }, { _id: 'c', email: 'c@x.com', calendlyLinkStatus: null }, { _id: 'd', email: 'd@x.com', calendlyLinkStatus: null }];
+    mockFind.mockReturnValueOnce(query(rows)).mockReturnValueOnce(query([]));
+    mockCheck.mockImplementation(async (email) => ({ available: true, status: email === 'd@x.com' ? 'Not Booked' : 'Booked' }));
+    const r = await syncCalendlyBookings(FAST);
+    expect(r.updated).toBe(3);
+    expect(mockUpdateOne.mock.calls.map((c) => [c[0]._id, c[1].$set.calendlyLinkStatus])).toEqual([['a', 'Booked'], ['c', 'Booked'], ['d', 'Not Booked']]);
   });
 
   it('waits out a 429 and carries on with the same person instead of giving up', async () => {
