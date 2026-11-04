@@ -42,7 +42,10 @@ async function calendlyGet(path) {
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new Error(`Calendly API responded ${res.status}: ${body.slice(0, 200)}`);
+    const err = new Error(`Calendly API responded ${res.status}: ${body.slice(0, 200)}`);
+    err.status = res.status;
+    err.retryAfter = Number(res.headers.get('retry-after')) || 0;
+    throw err;
   }
   return res.json();
 }
@@ -148,7 +151,8 @@ async function checkCalendlyStatus(email) {
       organization: scope.organization || null
     };
   } catch (err) {
-    return { available: false, reason: err.message };
+    // rateLimited / retryAfter let the background sync slow down instead of treating a 429 as a bad candidate.
+    return { available: false, reason: err.message, rateLimited: err.status === 429, retryAfter: err.retryAfter || 0, status: err.status };
   }
 }
 

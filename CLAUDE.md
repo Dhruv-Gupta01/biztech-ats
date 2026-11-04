@@ -293,6 +293,12 @@ All base paths mount under `/api`. Responses are `{ success, message, data? }`.
 | PATCH | `/api/slack-mappings/:id` | update |
 | DELETE | `/api/slack-mappings/:id` | delete |
 
+### Calendly sync (`calendlyRoutes.js`)
+| Method | Endpoint | Notes |
+|--------|----------|-------|
+| GET | `/api/calendly/sync-status` | `{configured, lastRun}`: result of the last background sync (in memory, resets on restart) |
+| POST | `/api/calendly/sync` | start a sync now (202, runs in the background); no-op if one is running or Calendly isn't configured |
+
 ### Dashboard (`dashboardRoutes.js`)
 | Method | Endpoint | Notes |
 |--------|----------|-------|
@@ -385,7 +391,7 @@ Env var **names** (never values — secrets are gitignored):
 |----------|-----|------------|
 | `0 2 * * *` | retention sweep | `RETENTION_ENABLED !== 'true'` |
 | `0 9 * * *` | Naukri CSV ETL import | `ETL_ENABLED !== 'true'` or no Drive creds |
-| `*/10 * * * *` | Calendly Booked / Not Booked sync (`services/calendlySyncService.js`): recent un-booked sends + 100 least-recently-checked | Calendly not configured |
+| `*/10 * * * *` | Calendly Booked / Not Booked sync (`services/calendlySyncService.js`): recent un-booked sends first, then the 100 least-recently-checked. Paced at ~45 calls/min because Calendly answers 429 after ~50-60 quick calls; a 429 makes the run wait and continue | Calendly not configured |
 
 ## 7. Frontend Views & Components
 
