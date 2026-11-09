@@ -7,28 +7,21 @@
 // state (Signed, Joined, Not Interested, ...) is never moved back.
 const Candidate = require('../models/Candidate');
 
-const CALENDLY_HOST = /(^|\.)calendly\.com$/i;
-const SLACK_HOST = /(^|\.)slack\.com$/i;
 const NDA_ICA = /\b(nda|ica)\b|non[- ]?disclosure|contractor agreement/i;
-const URL_IN_TEXT = /https?:\/\/[^\s<>"')]+/gi;
-
-function hosts(urls) {
-  const out = [];
-  for (const u of urls) {
-    try { out.push(new URL(u).hostname); } catch { /* not a URL */ }
-  }
-  return out;
-}
+// A domain written as a link, with or without https:// (recruiters often type "calendly.com/name/30min"). The
+// leading guard and trailing lookahead keep look-alikes such as notcalendly.com or calendly.com.evil.io out.
+const domainRegex = (domain) => new RegExp(`(^|[^a-z0-9-])(?:[a-z0-9-]+\\.)*${domain.replace('.', '\\.')}(?=[/\\s?#:]|$)`, 'i');
+const CALENDLY_LINK = domainRegex('calendly.com');
+const SLACK_LINK = domainRegex('slack.com');
 
 // links: [{name, url}] link attachments; files: [{name}] attached files.
 function detectSignals({ subject = '', body = '', links = [], files = [] }) {
-  const urls = [...links.map((l) => l.url).filter(Boolean), ...(String(body).match(URL_IN_TEXT) || [])];
-  const hostList = hosts(urls);
+  const linkText = [...links.map((l) => l.url).filter(Boolean), String(body)].join('\n');
   const ndaText = [subject, body, ...links.map((l) => l.name), ...files.map((f) => f.name)].filter(Boolean).join('\n');
   return {
-    calendly: hostList.some((h) => CALENDLY_HOST.test(h)),
+    calendly: CALENDLY_LINK.test(linkText),
     ndaIca: NDA_ICA.test(ndaText),
-    slack: hostList.some((h) => SLACK_HOST.test(h))
+    slack: SLACK_LINK.test(linkText)
   };
 }
 

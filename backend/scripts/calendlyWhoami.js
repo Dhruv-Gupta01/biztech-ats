@@ -5,7 +5,7 @@
 // (set CALENDLY_API_ENABLED=true and CALENDLY_API_TOKEN in .env first)
 require('dotenv').config();
 
-const { calendlyConfigured, resolveScope } = require('../services/calendlyService');
+const { calendlyConfigured, resolveScope, accountCount } = require('../services/calendlyService');
 
 async function main() {
   if (!calendlyConfigured()) {
@@ -17,6 +17,19 @@ async function main() {
   }
 
   try {
+    if (accountCount() > 1) {
+      console.log(`\n${accountCount()} Calendly accounts are configured (CALENDLY_API_TOKENS):`);
+      for (let i = 0; i < accountCount(); i++) {
+        try {
+          const s = await resolveScope(i);
+          console.log(`  ${i + 1}. ${s.name || '(no name)'}  ${s.schedulingUrl || ''}`);
+        } catch (e) {
+          console.log(`  ${i + 1}. ❌ ${e.message}`);
+        }
+      }
+      console.log('  (CALENDLY_USER_URI / CALENDLY_ORGANIZATION overrides are ignored with several accounts.)\n');
+      process.exit(0);
+    }
     const scope = await resolveScope();
     console.log('\n✅ Calendly token is valid. Copy these into backend/.env:\n');
     console.log(`CALENDLY_USER_URI=${scope.userUri || ''}`);

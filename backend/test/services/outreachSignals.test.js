@@ -13,6 +13,11 @@ describe('detectSignals', () => {
     expect(s.calendly).toBe(true);
     expect(s.slack).toBe(true);
   });
+  it('also spots links typed without https://', () => {
+    expect(detectSignals({ subject: 's', body: 'Book at calendly.com/hiring-biztechanalytics/30min please' }).calendly).toBe(true);
+    expect(detectSignals({ subject: 's', body: 'b', links: [{ name: 'Book', url: 'calendly.com/hr/30min' }] }).calendly).toBe(true);
+    expect(detectSignals({ subject: 's', body: 'join biztech.slack.com/join/xyz' }).slack).toBe(true);
+  });
   it('does not treat look-alike hosts as Calendly or Slack', () => {
     const s = detectSignals({ subject: 's', body: 'https://notcalendly.com/x https://calendly.com.evil.io/x https://slack.com.evil.io', links: [] });
     expect(s).toEqual({ calendly: false, ndaIca: false, slack: false });

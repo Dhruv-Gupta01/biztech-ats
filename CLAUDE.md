@@ -296,7 +296,7 @@ All base paths mount under `/api`. Responses are `{ success, message, data? }`.
 ### Calendly sync (`calendlyRoutes.js`)
 | Method | Endpoint | Notes |
 |--------|----------|-------|
-| GET | `/api/calendly/sync-status` | `{configured, lastRun}`: result of the last background sync (in memory, resets on restart) |
+| GET | `/api/calendly/sync-status` | `{configured, accounts[{name, schedulingUrl}], lastRun}`: connected Calendly accounts and the result of the last background sync (in memory, resets on restart) |
 | POST | `/api/calendly/sync` | start a sync now (202, runs in the background); no-op if one is running or Calendly isn't configured |
 
 ### Dashboard (`dashboardRoutes.js`)
@@ -310,7 +310,7 @@ All base paths mount under `/api`. Responses are `{ success, message, data? }`.
 | POST | `/api/outreach/attachments` | multipart `files[]` (≤10, ≤10MB each, ≤30MB total) |
 | GET | `/api/outreach/attachments` | list metadata |
 | DELETE | `/api/outreach/attachments/:id` | delete stored file |
-| POST | `/api/outreach/send` | `{candidateIds[], subject, body, attachments[], attachmentIds[]}`; after sending, `services/outreachSignals.js` marks the emailed candidates from the email content (calendly.com link → Calendly Link Sent; NDA / ICA / non-disclosure / contractor agreement in subject, body or file/link name → NDA & ICA Sent; slack.com link → Slack Invited) and returns them in `data.updates` |
+| POST | `/api/outreach/send` | `{candidateIds[], subject, body, attachments[], attachmentIds[]}`; after sending, `services/outreachSignals.js` marks the emailed candidates from the email content (calendly.com link (with or without https://) → Calendly Link Sent; NDA / ICA / non-disclosure / contractor agreement in subject, body or file/link name → NDA & ICA Sent; slack.com link → Slack Invited) and returns them in `data.updates` |
 
 ### Email Templates (`emailTemplateRoutes.js`) — public, no auth middleware
 | Method | Endpoint | Notes |
@@ -377,13 +377,13 @@ Each integration returns `{posted/sent: false, reason}` when disabled or credent
 | Email (Resend) | `services/emailService.js` | `EMAIL_ENABLED=true` | `RESEND_API_KEY`, `EMAIL_FROM` | no-op, reason returned |
 | LinkedIn job post | `services/linkedinService.js` | `LINKEDIN_API_ENABLED=true` | `LINKEDIN_ACCESS_TOKEN`, `LINKEDIN_ORG_ID` | no-op, partner API not self-serve |
 | Naukri job post | `services/naukriService.js` | `NAUKRI_API_ENABLED=true` | `NAUKRI_API_KEY`, `NAUKRI_RECRUITER_ID` | no-op, partner API |
-| Calendly lookup | `services/calendlyService.js` | `CALENDLY_API_ENABLED=true` | `CALENDLY_API_TOKEN`, optional `CALENDLY_USER_URI`/`CALENDLY_ORGANIZATION` | recruiter picks dropdown manually |
+| Calendly lookup | `services/calendlyService.js` | `CALENDLY_API_ENABLED=true` | `CALENDLY_API_TOKEN` and/or `CALENDLY_API_TOKENS` (comma-separated, one per Calendly account: a token only sees its own account's bookings), optional `CALENDLY_USER_URI`/`CALENDLY_ORGANIZATION` (single account only) | recruiter picks dropdown manually |
 | Google Drive / Naukri ETL | `services/googleDriveService.js` | `DRIVE_SYNC_ENABLED=true` / `ETL_ENABLED=true` | service account key file/key, `GOOGLE_DRIVE_FOLDER_ID` | no-op |
 | Google Form sync | `services/formSyncService.js` | `FORM_SYNC_ENABLED=true` | `GOOGLE_FORM_URL`, `GOOGLE_FORM_EMAIL_ENTRY_ID`, `GOOGLE_FORM_RESPONSE_SHEET_ID` | manual button only |
 | Resume analyzer | `services/resumeAnalyzerService.js`, `services/directScorer.js` | none (always runs) | `ANTHROPIC_API_KEY` → scores directly with Claude Haiku 5.5; otherwise the screener at `https://bta-resume-screener.onrender.com` + hardcoded API key | direct scoring needs no other service; the screener fallback sleeps when idle and Cloudflare can challenge it, so set the key on the server |
 
 Env var **names** (never values — secrets are gitignored):
-- Backend: `MONGO_URI`, `PORT`, `JWT_SECRET`, `JWT_EXPIRES_IN`, `EMAIL_ENABLED`, `RESEND_API_KEY`, `EMAIL_FROM`, `DRIVE_SYNC_ENABLED`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`, `GOOGLE_SERVICE_ACCOUNT_KEY_FILE`, `GOOGLE_DRIVE_FOLDER_ID`, `NAUKRI_API_ENABLED`, `NAUKRI_API_KEY`, `NAUKRI_RECRUITER_ID`, `NAUKRI_API_URL`, `FORM_SYNC_ENABLED`, `GOOGLE_FORM_URL`, `GOOGLE_FORM_EMAIL_ENTRY_ID`, `GOOGLE_FORM_RESPONSE_SHEET_ID`, `LINKEDIN_API_ENABLED`, `LINKEDIN_ACCESS_TOKEN`, `LINKEDIN_ORG_ID`, `COMPANY_CAREERS_URL`, `RETENTION_ENABLED`, `RETENTION_DAYS`, `RETENTION_MODE`, `CALENDLY_API_ENABLED`, `CALENDLY_API_TOKEN`, `CALENDLY_USER_URI`, `CALENDLY_ORGANIZATION`, `CALENDLY_API_URL`, `ANTHROPIC_API_KEY`.
+- Backend: `MONGO_URI`, `PORT`, `JWT_SECRET`, `JWT_EXPIRES_IN`, `EMAIL_ENABLED`, `RESEND_API_KEY`, `EMAIL_FROM`, `DRIVE_SYNC_ENABLED`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`, `GOOGLE_SERVICE_ACCOUNT_KEY_FILE`, `GOOGLE_DRIVE_FOLDER_ID`, `NAUKRI_API_ENABLED`, `NAUKRI_API_KEY`, `NAUKRI_RECRUITER_ID`, `NAUKRI_API_URL`, `FORM_SYNC_ENABLED`, `GOOGLE_FORM_URL`, `GOOGLE_FORM_EMAIL_ENTRY_ID`, `GOOGLE_FORM_RESPONSE_SHEET_ID`, `LINKEDIN_API_ENABLED`, `LINKEDIN_ACCESS_TOKEN`, `LINKEDIN_ORG_ID`, `COMPANY_CAREERS_URL`, `RETENTION_ENABLED`, `RETENTION_DAYS`, `RETENTION_MODE`, `CALENDLY_API_ENABLED`, `CALENDLY_API_TOKEN`, `CALENDLY_API_TOKENS`, `CALENDLY_USER_URI`, `CALENDLY_ORGANIZATION`, `CALENDLY_API_URL`, `ANTHROPIC_API_KEY`.
 - Frontend: `REACT_APP_API_URL` (Vercel: `https://biztech-ats-backend-0jpt.onrender.com`; local: `http://localhost:5004`).
 
 ### Cron jobs (registered in `server.js`)
@@ -391,7 +391,7 @@ Env var **names** (never values — secrets are gitignored):
 |----------|-----|------------|
 | `0 2 * * *` | retention sweep | `RETENTION_ENABLED !== 'true'` |
 | `0 9 * * *` | Naukri CSV ETL import | `ETL_ENABLED !== 'true'` or no Drive creds |
-| `*/10 * * * *` | Calendly Booked / Not Booked sync (`services/calendlySyncService.js`): recent un-booked sends first, then the 100 least-recently-checked. Paced at ~45 calls/min because Calendly answers 429 after ~50-60 quick calls; a 429 makes the run wait and continue | Calendly not configured |
+| `*/10 * * * *` | Calendly Booked sync (`services/calendlySyncService.js`). Step 1: read the org's recent + upcoming scheduled events and their invitees, match emails to candidates → Booked (+ Calendly Link Sent = Sent). Step 2: per-email lookups for recent sends and a rotation of 100. It only ever moves people towards Booked, never overwrites a stored Booked (Calendly not finding an email is not proof). Paced at ~45 calls/min because Calendly answers 429 after ~50-60 quick calls; a 429 makes the run wait and continue | Calendly not configured |
 
 ## 7. Frontend Views & Components
 
@@ -440,7 +440,7 @@ API client (`api/api.js`): one `request()` wrapper, all exports listed in sectio
 - **Auth coverage**: only `GET /api/auth/me` uses `requireAuth`. All other routes are public by design (documented in `middleware/auth.js`), not an oversight — but this is a security consideration for production.
 - **LinkedIn / Naukri job posting**: not self-serve APIs; require partner agreements. Code is a documented placeholder — never tested against live partner accounts. Role creation succeeds regardless.
 - **Resume analyzer**: external service at `bta-resume-screener.onrender.com` with hardcoded API key in `services/resumeAnalyzerService.js` — best-effort heuristic, not a trustworthy extractor.
-- **Calendly**: requires a personal access token; `CALENDLY_USER_URI`/`CALENDLY_ORGANIZATION` auto-discovered from `/users/me` if blank.
+- **Calendly**: requires a personal access token per Calendly account that hosts booking links (separate accounts are separate organisations; a token cannot see another account's bookings); `CALENDLY_USER_URI`/`CALENDLY_ORGANIZATION` auto-discovered from `/users/me` if blank.
 - **Dummy data**: `frontend/src/data/dummyData.js` exists but its usage in the running app is unverified (may be dev-only).
 - **EmploymentType registry**: backend cache is in-memory; refreshed on boot and after mutations. Frontend fetches once on mount with fallback to `EMPLOYMENT_TYPES` if backend unavailable. If a recruiter adds a type while a tab is open, other open tabs won't see it until refreshed.
 - **Candidate status enum** vs **interviewStatus/assessmentStatus**: separate concepts; `status` is pipeline position, `assessmentStatus` is assessment tracking — easy to conflate.

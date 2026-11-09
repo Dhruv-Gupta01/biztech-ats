@@ -3,8 +3,15 @@ const mockUpdateOne = jest.fn();
 const mockBulkWrite = jest.fn();
 jest.mock('../../models/Candidate', () => ({ find: (...a) => mockFind(...a), updateOne: (...a) => mockUpdateOne(...a), bulkWrite: (...a) => mockBulkWrite(...a) }));
 const mockCheck = jest.fn();
+const mockEvents = jest.fn();
+const mockInvitees = jest.fn();
 let mockConfigured = true;
-jest.mock('../../services/calendlyService', () => ({ checkCalendlyStatus: (...a) => mockCheck(...a), calendlyConfigured: () => mockConfigured }));
+jest.mock('../../services/calendlyService', () => ({
+  checkCalendlyStatus: (...a) => mockCheck(...a),
+  calendlyConfigured: () => mockConfigured,
+  listRecentEvents: (...a) => mockEvents(...a),
+  listEventInvitees: (...a) => mockInvitees(...a)
+}));
 const { syncCalendlyBookings, getLastRun } = require('../../services/calendlySyncService');
 const FAST = { paceMs: 0, rateLimitWaitMs: 0 };
 
@@ -15,6 +22,7 @@ describe('syncCalendlyBookings', () => {
   beforeEach(() => {
     mockConfigured = true;
     mockFind.mockReset(); mockUpdateOne.mockReset().mockResolvedValue({}); mockBulkWrite.mockReset().mockResolvedValue({}); mockCheck.mockReset();
+    mockEvents.mockReset().mockResolvedValue([]); mockInvitees.mockReset().mockResolvedValue([]);
   });
 
   it('does nothing when Calendly is not configured', async () => {
@@ -97,5 +105,62 @@ describe('syncCalendlyBookings', () => {
     expect(mockUpdateOne).not.toHaveBeenCalled();
     expect(mockBulkWrite).not.toHaveBeenCalled();
     expect(getLastRun().stoppedEarly).toBe(true);
+  });
+});
+
+describe('syncCalendlyBookings: bookings from Calendly events', () => {
+  beforeEach(() => {
+    mockConfigured = true;
+    mockFind.mockReset(); mockUpdateOne.mockReset().mockResolvedValue({}); mockBulkWrite.mockReset().mockResolvedValue({}); mockCheck.mockReset();
+    mockEvents.mockReset(); mockInvitees.mockReset();
+  });
+  const ev = (n, updated = 't1') => ({ uri: `https://api.calendly.com/scheduled_events/ev${n}`, updated_at: updated, event_memberships: [{ user: `https://api.calendly.com/users/u${n % 2}` }] });
+
+  it('marks everyone who booked as Booked and Sent (matched by email), counts the rest, and reports hosts seen', async () => {
+    mockEvents.mockResolvedValue([ev(1), ev(2)]);
+    mockInvitees.mockImplementation(async (uuid) => (uuid === 'ev1' ? [{ email: 'A@x.com' }] : [{ email: 'stranger@y.com' }, { email: 'b@x.com' }]));
+    // events step finds candidates first; the two lookups after it find none
+    mockFind.mockReturnValueOnce(query([
+      { _id: 'a', email: 'a@x.com', calendlyLinkStatus: null, calendlyLinkSent: null },
+      { _id: 'b', email: 'b@x.com', calendlyLinkStatus: 'Booked', calendlyLinkSent: 'Sent' }
+    ])).mockReturnValue(query([]));
+    const r = await syncCalendlyBookings(FAST);
+    expect(r).toMatchObject({ eventsSeen: 2, eventsRead: 2, hostsSeen: 2, inviteesRead: 3, bookingsMatched: 2, bookingsUnmatched: 1, bookedFromEvents: 1 });
+    expect(mockFind.mock.calls[0][0].email.$in.sort()).toEqual(['a@x.com', 'b@x.com', 'stranger@y.com']);
+    const [filter, update] = mockUpdateOne.mock.calls[0];
+    expect(filter).toEqual({ _id: 'a' });
+    expect(update.$set).toMatchObject({ calendlyLinkStatus: 'Booked', calendlyLinkSent: 'Sent' });
+    expect(update.$set.calendlyLinkSentAt).toBeInstanceOf(Date);
+    expect(mockUpdateOne).toHaveBeenCalledTimes(1); // b is already Booked + Sent: untouched
+  });
+
+  it('reads each event once: a repeat run skips unchanged events but re-reads an updated one', async () => {
+    mockEvents.mockResolvedValue([ev(7, 'v1')]);
+    mockInvitees.mockResolvedValue([{ email: 'c@x.com' }]);
+    mockFind.mockReturnValue(query([]));
+    await syncCalendlyBookings(FAST);
+    await syncCalendlyBookings(FAST);
+    expect(mockInvitees).toHaveBeenCalledTimes(1);
+    mockEvents.mockResolvedValue([ev(7, 'v2')]);
+    await syncCalendlyBookings(FAST);
+    expect(mockInvitees).toHaveBeenCalledTimes(2);
+  });
+
+  it('a failure fetching events is reported but does not stop the per-candidate lookups', async () => {
+    mockEvents.mockRejectedValue(Object.assign(new Error('Calendly API responded 403'), { status: 403 }));
+    mockFind.mockReturnValueOnce(query([])).mockReturnValueOnce(query([{ _id: 'z', email: 'z@x.com', calendlyLinkStatus: null }]));
+    mockCheck.mockResolvedValue({ available: true, status: 'Booked' });
+    const r = await syncCalendlyBookings(FAST);
+    expect(r.bookingsError).toMatch(/403/);
+    expect(r.updated).toBe(1);
+  });
+
+  it('waits out a 429 while listing events and carries on', async () => {
+    mockEvents.mockRejectedValueOnce(Object.assign(new Error('429'), { status: 429 })).mockResolvedValue([]);
+    mockFind.mockReturnValue(query([]));
+    const r = await syncCalendlyBookings(FAST);
+    expect(r.rateLimitWaits).toBe(1);
+    expect(r.bookingsError).toBeUndefined();
+    expect(mockEvents).toHaveBeenCalledTimes(2);
   });
 });
