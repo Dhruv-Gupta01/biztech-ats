@@ -1,12 +1,29 @@
-// Scores resumes by calling the Anthropic API straight from the ATS backend, so Resume Analyzer
+// Scores resumes by calling the model API straight from the ATS backend, so Resume Analyzer
 // doesn't depend on the separate screener service (free Render instance that sleeps, and sits
 // behind Cloudflare, which can answer server-to-server calls with a bot challenge instead of a score).
-// Port of analyze_resume_for_sheet() in BTA-Resume-Screener: same prompts, same model, and the
-// weighted average is computed here in code, not by the model. Weights are normalised.
-const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
-const MODEL = 'claude-haiku-5-5';
-const EFFORT = 'medium';
-// Thinking tokens count against max_tokens on Claude.
+// Port of analyze_resume_for_sheet() in BTA-Resume-Screener: same prompts, and the weighted average is
+// computed here in code, not by the model. Weights are normalised.
+//
+// Two providers, same prompts and same parsing:
+//   'openai'    gpt-6-luna at medium reasoning effort (what the screener ran before it moved to Claude)
+//   'anthropic' claude-haiku-5-5 at medium effort
+const PROVIDERS = {
+  openai: {
+    label: 'OpenAI',
+    keyName: 'OPENAI_API_KEY',
+    url: 'https://api.openai.com/v1/chat/completions',
+    model: 'gpt-6-luna',
+    effort: 'medium'
+  },
+  anthropic: {
+    label: 'Anthropic',
+    keyName: 'ANTHROPIC_API_KEY',
+    url: 'https://api.anthropic.com/v1/messages',
+    model: 'claude-haiku-5-5',
+    effort: 'medium'
+  }
+};
+// Reasoning / thinking tokens count against the output cap on both providers.
 const MAX_TOKENS = 8000;
 const CONCURRENCY = 15;
 const MAX_ATTEMPTS = 4;
@@ -91,29 +108,47 @@ Output ONLY the JSON object as specified in the system prompt, with no additiona
   };
 }
 
-// One Messages API call. Throws an Error with .status set for HTTP failures (retry decisions are the caller's).
-async function callClaude(apiKey, system, user) {
-  const res = await fetch(ANTHROPIC_URL, {
+// One model call. Throws an Error with .status set for HTTP failures (retry decisions are the caller's).
+async function callModel(provider, apiKey, system, user) {
+  const cfg = PROVIDERS[provider];
+  const request = provider === 'openai'
+    ? {
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
+        body: {
+          model: cfg.model,
+          messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+          response_format: { type: 'json_object' },
+          reasoning_effort: cfg.effort,
+          max_completion_tokens: MAX_TOKENS
+        }
+      }
+    : {
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+        body: {
+          model: cfg.model,
+          max_tokens: MAX_TOKENS,
+          system,
+          messages: [{ role: 'user', content: user }],
+          output_config: { effort: cfg.effort }
+        }
+      };
+  const res = await fetch(cfg.url, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: MAX_TOKENS,
-      system,
-      messages: [{ role: 'user', content: user }],
-      output_config: { effort: EFFORT }
-    }),
+    headers: request.headers,
+    body: JSON.stringify(request.body),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    const err = new Error(`Anthropic API returned ${res.status}${body ? `: ${body.slice(0, 200)}` : ''}`);
+    const err = new Error(`${cfg.label} API returned ${res.status}${body ? `: ${body.slice(0, 200)}` : ''}`);
     err.status = res.status;
     err.retryAfter = Number(res.headers.get('retry-after')) || 0;
     throw err;
   }
   const data = await res.json();
-  const text = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+  const text = provider === 'openai'
+    ? String((data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '').trim()
+    : (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
   return text.replace(/^```(?:json)?\s*|\s*```$/g, '');
 }
 
@@ -162,12 +197,12 @@ function normalise(record, criteria, jdWeight, useJdScore) {
   return out;
 }
 
-async function scoreOne(apiKey, jobDescription, resumeText, criteria, jdWeight, useJdScore) {
+async function scoreOne(provider, apiKey, jobDescription, resumeText, criteria, jdWeight, useJdScore) {
   const { system, user } = buildPrompts(jobDescription, resumeText, criteria, useJdScore);
   let lastErr;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
     try {
-      const text = await callClaude(apiKey, system, user);
+      const text = await callModel(provider, apiKey, system, user);
       return normalise(JSON.parse(text), criteria, jdWeight, useJdScore);
     } catch (err) {
       lastErr = err;
@@ -178,13 +213,14 @@ async function scoreOne(apiKey, jobDescription, resumeText, criteria, jdWeight, 
       await sleep(Math.min(30, err.retryAfter || 2 * 2 ** attempt) * 1000);
     }
   }
-  if (lastErr && lastErr.status === 401) throw new Error('Anthropic API key was rejected (check ANTHROPIC_API_KEY on the server).');
+  if (lastErr && lastErr.status === 401) throw new Error(`${PROVIDERS[provider].label} API key was rejected (check ${PROVIDERS[provider].keyName} on the server).`);
   throw lastErr;
 }
 
 // resumes: [{id, resume_text}] -> [{id, result} | {id, error}] in input order, same shape the screener returns.
-// One resume failing never fails the batch.
-async function scoreResumesDirect(apiKey, jobDescription, resumes, criteria = [], jdWeight = 0) {
+// One resume failing never fails the batch. `provider` is 'openai' (gpt-6-luna) or 'anthropic' (Claude Haiku 5.5).
+async function scoreResumesDirect(apiKey, jobDescription, resumes, criteria = [], jdWeight = 0, provider = 'anthropic') {
+  if (!PROVIDERS[provider]) throw new Error(`Unknown resume analyzer provider "${provider}".`);
   const rubric = (criteria || []).filter((c) => c && String(c.text || '').trim() && Number(c.weight) > 0);
   const jdw = Number(jdWeight) > 0 ? Number(jdWeight) : 0;
   const useJdScore = jdw > 0;
@@ -195,7 +231,7 @@ async function scoreResumesDirect(apiKey, jobDescription, resumes, criteria = []
       const i = next++;
       const { id, resume_text: text } = resumes[i];
       try {
-        results[i] = { id, result: await scoreOne(apiKey, jobDescription, text, rubric, jdw, useJdScore) };
+        results[i] = { id, result: await scoreOne(provider, apiKey, jobDescription, text, rubric, jdw, useJdScore) };
       } catch (err) {
         results[i] = { id, error: err.message };
       }
@@ -205,4 +241,4 @@ async function scoreResumesDirect(apiKey, jobDescription, resumes, criteria = []
   return results;
 }
 
-module.exports = { scoreResumesDirect, buildPrompts, normalise };
+module.exports = { scoreResumesDirect, buildPrompts, normalise, PROVIDERS };

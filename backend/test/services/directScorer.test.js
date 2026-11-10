@@ -70,3 +70,49 @@ describe('scoreResumesDirect', () => {
     expect(out.map((o) => [o.id, o.result.score])).toEqual([['id3', 3], ['id1', 1], ['id2', 2]]);
   });
 });
+
+describe('scoreResumesDirect with OpenAI (gpt-6-luna)', () => {
+  beforeEach(() => { jest.useFakeTimers({ doNotFake: ['nextTick'] }); });
+  afterEach(() => { jest.useRealTimers(); delete global.fetch; });
+  const run = async (p) => { const done = p.then((v) => v, (e) => { throw e; }); await jest.runAllTimersAsync(); return done; };
+  const openai = (obj, status = 200) => ({
+    ok: status === 200, status,
+    headers: { get: () => null },
+    text: async () => JSON.stringify(obj),
+    json: async () => ({ choices: [{ message: { content: typeof obj === 'string' ? obj : JSON.stringify(obj) } }] })
+  });
+
+  it('calls chat completions with gpt-6-luna, medium reasoning effort and JSON output', async () => {
+    global.fetch = jest.fn(async () => openai({ skills: 'Go', strongest_language: 'Go', summary: 's', criteria_scores: [{ score: 80 }, { score: 40 }], overall_jd_fit_score: 60 }));
+    const [r] = await run(scoreResumesDirect('sk-test', 'THE JD', [{ id: 'a', resume_text: 'THE RESUME' }], criteria, 20, 'openai'));
+    const [url, opts] = global.fetch.mock.calls[0];
+    const body = JSON.parse(opts.body);
+    expect(url).toBe('https://api.openai.com/v1/chat/completions');
+    expect(opts.headers.authorization).toBe('Bearer sk-test');
+    expect(opts.headers['x-api-key']).toBeUndefined();
+    expect(body).toMatchObject({ model: 'gpt-6-luna', reasoning_effort: 'medium', response_format: { type: 'json_object' }, max_completion_tokens: 8000 });
+    expect(body.max_tokens).toBeUndefined();
+    expect(body.messages[0]).toMatchObject({ role: 'system' });
+    expect(body.messages[0].content).toContain('1. Python');
+    expect(body.messages[1].content).toContain('THE JD');
+    expect(body.messages[1].content).toContain('THE RESUME');
+    // same weighted average as the Anthropic path: (80*30 + 40*10 + 60*20) / 60 -> 67
+    expect(r.result.score).toBe(67);
+  });
+
+  it('reads a fenced reply, retries a 429, and names OPENAI_API_KEY when the key is rejected', async () => {
+    const seq = [openai({}, 429), openai('```json\n{"skills":"x","summary":"s","score":55}\n```')];
+    global.fetch = jest.fn(async () => seq.shift());
+    const [ok] = await run(scoreResumesDirect('k', 'jd', [{ id: 'a', resume_text: 'x' }], [], 0, 'openai'));
+    expect(ok.result.score).toBe(55);
+
+    global.fetch = jest.fn(async () => openai({}, 401));
+    const [bad] = await run(scoreResumesDirect('k', 'jd', [{ id: 'a', resume_text: 'x' }], [], 0, 'openai'));
+    expect(bad.error).toMatch(/OpenAI API key was rejected.*OPENAI_API_KEY/);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an unknown provider', async () => {
+    await expect(scoreResumesDirect('k', 'jd', [], [], 0, 'nope')).rejects.toThrow(/Unknown resume analyzer provider/);
+  });
+});
