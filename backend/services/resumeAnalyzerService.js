@@ -23,7 +23,7 @@ async function waitUntilAwake() {
 }
 const API_KEY = 'OKqUW9Yfe7o9swI7nivsCVNHODnnwjAq8y0_9wsAulY';
 
-// Fallback path (neither OPENAI_API_KEY nor ANTHROPIC_API_KEY on this server): the separate screener service on Render.
+// Fallback path (no ANTHROPIC_API_KEY on this server): the separate screener service on Render.
 async function scoreViaScreener(jobDescription, resumes, criteria = [], jdWeight = 0) {
   const deadline = Date.now() + OVERALL_DEADLINE_MS;
 
@@ -49,7 +49,7 @@ async function scoreViaScreener(jobDescription, resumes, criteria = [], jdWeight
         // Render fronts the screener with Cloudflare, which can answer a server-to-server call with an
         // HTML bot challenge (status 429, "Just a moment..."). Waiting won't clear that, so fail fast.
         if (/^\s*<(!doctype|html)/i.test(text)) {
-          throw new Error(`The resume analyzer service blocked the request (HTTP ${response.status}, Cloudflare challenge). Set OPENAI_API_KEY (or ANTHROPIC_API_KEY) on the ATS server so scoring doesn't go through it.`);
+          throw new Error(`The resume analyzer service blocked the request (HTTP ${response.status}, Cloudflare challenge). Set ANTHROPIC_API_KEY on the ATS server so scoring doesn't go through it.`);
         }
         // 429 / 502 / 503 / 504 come from Render's edge while the free instance wakes or is busy:
         // wait for it to answer /health (a cold start outlasts a few short sleeps), then try again.
@@ -80,11 +80,10 @@ async function scoreViaScreener(jobDescription, resumes, criteria = [], jdWeight
 }
 
 // criteria ([{text, weight}]) and jdWeight are optional; with neither the analyzer returns one holistic 0-100 score.
-// The ATS calls the model itself (no cold start, no extra hop): OPENAI_API_KEY -> gpt-6-luna (medium effort);
-// else ANTHROPIC_API_KEY -> Claude Haiku 5.5; with neither it uses the separate screener service.
+// With ANTHROPIC_API_KEY set the ATS calls Anthropic itself (no cold start, no extra hop); otherwise it uses the screener.
 async function scoreResumes(jobDescription, resumes, criteria = [], jdWeight = 0) {
-  if (process.env.OPENAI_API_KEY) return scoreResumesDirect(process.env.OPENAI_API_KEY, jobDescription, resumes, criteria, jdWeight, 'openai');
-  if (process.env.ANTHROPIC_API_KEY) return scoreResumesDirect(process.env.ANTHROPIC_API_KEY, jobDescription, resumes, criteria, jdWeight, 'anthropic');
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (apiKey) return scoreResumesDirect(apiKey, jobDescription, resumes, criteria, jdWeight);
   return scoreViaScreener(jobDescription, resumes, criteria, jdWeight);
 }
 
