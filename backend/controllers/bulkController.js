@@ -34,8 +34,10 @@ const HEADER_MAP = {
   'Phone Number': 'phone',
   'Contact': 'phone',
   'Mobile': 'phone',
+  'Contact Number': 'phone',
   'Location': 'location',
   'Current Location': 'location',
+  'Current City / Location': 'location',
   'Role Code': 'roleCode',
   'Role': 'roleCode',
   'Employment Type': 'employmentType',
@@ -48,9 +50,11 @@ const HEADER_MAP = {
   'Expected CTC': 'ctcExpected',
   'Skills': 'skills',
   'Which programming languages do you have professional production experience in?': 'skills',
+  'Strongest Programming Language': 'skills',
   'Resume link': 'resumeUrl',
   'Resume Link': 'resumeUrl',
   'Please upload your CV': 'resumeUrl',
+  'Updated Resume': 'resumeUrl',
   'CV': 'resumeUrl',
   'Status': 'status',
   'Source': 'source',
@@ -61,12 +65,20 @@ const HEADER_MAP = {
   'Tell us about your experience so far': 'answerExperience',
   'Have you worked before or done any internships?': 'answerWorkedBefore',
   'Which internship(s) or job(s) have you done?': 'answerInternships',
+  // Coding-platform form (e.g. "AI Evaluator (Freelance) - Leetcode or similar Exp")
+  'Do you have experience with LeetCode or any similar platform / DSA course / coding rank?': 'answerLeetcode',
+  'Which platform(s) / course have you used?': 'answerPlatforms',
+  'How long have you been practising?': 'answerPracticeDuration',
+  'Your rank / rating / problems solved / badge / certificate': 'answerRank',
+  'Profile link or certificate link': 'answerProfileLink',
+  'Can you give 4-6 hours per day?': 'answerHoursPerDay',
   'Designation': 'designation',
   'Current Designation': 'designation',
   'Company': 'company',
   'Current Company': 'company',
   'Education': 'education',
-  'Qualification': 'education'
+  'Qualification': 'education',
+  'Highest Qualification (completed or pursuing)': 'education'
 };
 
 // Header matching ignores case and extra spaces, so "Email ID", "email id" and "EMAIL ID " all map to email.
@@ -121,7 +133,13 @@ function buildFormRemarks(row) {
   return [
     ['Experience so far', row.answerExperience],
     ['Worked before / internships', row.answerWorkedBefore],
-    ['Internship(s) or job(s) done', row.answerInternships]
+    ['Internship(s) or job(s) done', row.answerInternships],
+    ['LeetCode / DSA experience', row.answerLeetcode],
+    ['Platform(s) / course used', row.answerPlatforms],
+    ['Practising for', row.answerPracticeDuration],
+    ['Rank / rating / badge', row.answerRank],
+    ['Profile / certificate link', row.answerProfileLink],
+    ['Can give 4-6 hours per day', row.answerHoursPerDay]
   ]
     .filter(([, v]) => String(v || '').trim())
     .map(([label, v]) => `${label}: ${String(v).trim()}`)
