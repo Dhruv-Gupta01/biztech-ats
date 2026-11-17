@@ -21,6 +21,7 @@ const candidateSchema = new mongoose.Schema({
   company: { type: String, default: '' },
   education: { type: String, default: '' },
   resumeUrl: { type: String, default: '' },
+  videoUrl: { type: String, default: '' }, // intro video link (e.g. the Founder's Office form's recorded answer)
   resumeData: { type: Buffer, default: null },
   resumeText: { type: String, default: '' },
   

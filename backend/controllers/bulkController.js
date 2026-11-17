@@ -28,6 +28,8 @@ const HEADER_MAP = {
   'Name': 'fullName',
   'Email': 'email',
   'Email Address': 'email',
+  'Email ID': 'email',
+  'E-mail': 'email',
   'Phone': 'phone',
   'Phone Number': 'phone',
   'Contact': 'phone',
@@ -48,8 +50,17 @@ const HEADER_MAP = {
   'Which programming languages do you have professional production experience in?': 'skills',
   'Resume link': 'resumeUrl',
   'Resume Link': 'resumeUrl',
+  'Please upload your CV': 'resumeUrl',
+  'CV': 'resumeUrl',
   'Status': 'status',
   'Source': 'source',
+  'Where did you learn about this opportunity?': 'source',
+  'Video Link': 'videoUrl',
+  'Video': 'videoUrl',
+  // Free-text form answers: kept together in generalRemarks (see buildFormRemarks)
+  'Tell us about your experience so far': 'answerExperience',
+  'Have you worked before or done any internships?': 'answerWorkedBefore',
+  'Which internship(s) or job(s) have you done?': 'answerInternships',
   'Designation': 'designation',
   'Current Designation': 'designation',
   'Company': 'company',
@@ -58,12 +69,17 @@ const HEADER_MAP = {
   'Qualification': 'education'
 };
 
+// Header matching ignores case and extra spaces, so "Email ID", "email id" and "EMAIL ID " all map to email.
+const HEADER_LOOKUP = Object.fromEntries(Object.entries(HEADER_MAP).map(([k, v]) => [k.toLowerCase(), v]));
+
 function normalizeHeaders(records) {
   return records.map(row => {
     const normalized = {};
     for (const [key, value] of Object.entries(row)) {
       const trimmedKey = key.trim();
-      const mappedKey = HEADER_MAP[trimmedKey] || trimmedKey;
+      let mappedKey = HEADER_MAP[trimmedKey] || HEADER_LOOKUP[trimmedKey.toLowerCase().replace(/\s+/g, ' ')] || trimmedKey;
+      // A form question that asks for a video ("Please record a 1-2 minute video ...") is the video link.
+      if (mappedKey === trimmedKey && /video/i.test(trimmedKey)) mappedKey = 'videoUrl';
       normalized[mappedKey] = value;
     }
     return normalized;
@@ -79,13 +95,37 @@ function parseYears(raw) {
   return m ? Number(m[0]) : 0;
 }
 
+// Some forms (e.g. an internship interest form) never ask for years of experience. When the file has no
+// experience column at all, every row counts as 0 years instead of being rejected for a field that doesn't
+// exist; a file that HAS the column still rejects rows where it is blank.
+function hasExperienceColumn(records) {
+  return records.some((r) => Object.prototype.hasOwnProperty.call(r, 'yearsOfExperience'));
+}
+
 // Form-sheet exports can shift cells under the wrong header, so if the resume-link column does not
 // hold a link, fall back to the first link found anywhere in the row.
 function findResumeUrl(row) {
   const isUrl = (v) => /^https?:\/\/\S+$/i.test(String(v || '').trim());
   if (isUrl(row.resumeUrl)) return row.resumeUrl.trim();
-  const hit = Object.values(row).find(isUrl);
+  // never pick the intro video as the resume
+  const hit = Object.entries(row).filter(([k]) => k !== 'videoUrl').map(([, v]) => v).find(isUrl);
   return hit ? hit.trim() : '';
+}
+
+function findVideoUrl(row) {
+  return /^https?:\/\/\S+$/i.test(String(row.videoUrl || '').trim()) ? row.videoUrl.trim() : '';
+}
+
+// The form's free-text answers, labelled and joined, for the candidate's General Remarks (blank answers skipped).
+function buildFormRemarks(row) {
+  return [
+    ['Experience so far', row.answerExperience],
+    ['Worked before / internships', row.answerWorkedBefore],
+    ['Internship(s) or job(s) done', row.answerInternships]
+  ]
+    .filter(([, v]) => String(v || '').trim())
+    .map(([label, v]) => `${label}: ${String(v).trim()}`)
+    .join('\n');
 }
 
 function parseCsv(text) {
@@ -149,6 +189,7 @@ exports.bulkImportCandidates = async (req, res) => {
     }
 
     const results = { insertedCount: 0, skippedCount: 0, errors: [] };
+    const experienceColumn = hasExperienceColumn(records);
 
     for (let i = 0; i < records.length; i++) {
       const row = records[i];
@@ -158,7 +199,7 @@ exports.bulkImportCandidates = async (req, res) => {
       const email = (row.email || '').trim().toLowerCase();
       const phone = (row.phone || '').trim();
       const roleCode = (row.roleCode || '').trim().toUpperCase();
-      const yearsOfExperience = parseYears(row.yearsOfExperience);
+      const yearsOfExperience = experienceColumn ? parseYears(row.yearsOfExperience) : 0;
 
       if (!fullName || !email || !phone || !roleCode || yearsOfExperience === undefined || yearsOfExperience === '') {
         results.skippedCount++;
@@ -196,6 +237,8 @@ exports.bulkImportCandidates = async (req, res) => {
           company: row.company || '',
           education: row.education || '',
           resumeUrl: findResumeUrl(row),
+          videoUrl: findVideoUrl(row),
+          generalRemarks: buildFormRemarks(row),
           status,
           source: row.source || 'CSV Import'
         });
@@ -249,6 +292,7 @@ exports.bulkImportWithRole = async (req, res) => {
     }
 
     const results = { insertedCount: 0, skippedCount: 0, errors: [] };
+    const experienceColumn = hasExperienceColumn(records);
 
     for (let i = 0; i < records.length; i++) {
       const row = records[i];
@@ -257,7 +301,7 @@ exports.bulkImportWithRole = async (req, res) => {
       const fullName = (row.fullName || '').trim();
       const email = (row.email || '').trim().toLowerCase();
       const phone = (row.phone || '').trim();
-      const yearsOfExperience = parseYears(row.yearsOfExperience);
+      const yearsOfExperience = experienceColumn ? parseYears(row.yearsOfExperience) : 0;
 
       if (!fullName || !email || !phone || yearsOfExperience === undefined || yearsOfExperience === '') {
         results.skippedCount++;
@@ -295,6 +339,8 @@ exports.bulkImportWithRole = async (req, res) => {
           company: row.company || '',
           education: row.education || '',
           resumeUrl: findResumeUrl(row),
+          videoUrl: findVideoUrl(row),
+          generalRemarks: buildFormRemarks(row),
           status,
           source: row.source || 'CSV Import'
         });

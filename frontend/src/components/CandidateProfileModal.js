@@ -69,6 +69,7 @@ function CandidateProfileModal({ candidate, role, onClose, onSaved }) {
       phone: c.phone || '',
       location: c.location || '',
       resumeUrl: c.resumeUrl || '',
+      videoUrl: c.videoUrl || '',
       employmentType: effectiveEmploymentType(c) || 'Full-Time',
       yearsOfExperience: c.yearsOfExperience ?? 0,
       ctcCurrent: c.ctcCurrent || 0,
@@ -147,6 +148,15 @@ function CandidateProfileModal({ candidate, role, onClose, onSaved }) {
                       <span style={{ color: 'var(--text-500)' }}>—</span>
                     )}
                   </Field>
+                  <Field label="Video">
+                    {c.videoUrl ? (
+                      <a href={c.videoUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary)', textDecoration: 'underline', cursor: 'pointer' }}>
+                        ▶ Watch video
+                      </a>
+                    ) : (
+                      <span style={{ color: 'var(--text-500)' }}>—</span>
+                    )}
+                  </Field>
                   <Field label="Location">{c.location}</Field>
                   <Field label="Source">{c.source}</Field>
                   <Field label="Imported to ATS">{c.createdAt ? new Date(c.createdAt).toLocaleString() : null}</Field>
@@ -181,6 +191,13 @@ function CandidateProfileModal({ candidate, role, onClose, onSaved }) {
                   </div>
                 )}
               </div>
+
+              {c.generalRemarks && (
+                <div className="profile-section">
+                  <h4>Application answers</h4>
+                  <p style={{ fontSize: 13, whiteSpace: 'pre-wrap', margin: 0 }}>{c.generalRemarks}</p>
+                </div>
+              )}
 
               <div className="profile-section">
                 <h4>Google Form Submissions</h4>
@@ -244,6 +261,10 @@ function CandidateProfileModal({ candidate, role, onClose, onSaved }) {
                     <div>
                       <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-500)' }}>Resume Link</label>
                       <input value={form.resumeUrl || ''} onChange={(e) => setForm({ ...form, resumeUrl: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid var(--border)', marginTop: 4 }} placeholder="https://..." />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-500)' }}>Video Link</label>
+                      <input value={form.videoUrl || ''} onChange={(e) => setForm({ ...form, videoUrl: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid var(--border)', marginTop: 4 }} placeholder="https://..." />
                     </div>
                     <div>
                       <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-500)' }}>Location</label>

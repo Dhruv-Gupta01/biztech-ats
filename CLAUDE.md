@@ -150,6 +150,7 @@ Routing is manual (`views[view] || Dashboard`), not a router library. `api.js` c
 | company | String | |
 | education | String | |
 | resumeUrl | String | PDF served via GET /api/candidates/:id/resume |
+| videoUrl | String, default '' | intro video link (e.g. the Founder's Office form's recorded answer); shown as a Video column in the pool (non-freelance/medical view) and in the profile; set by CSV import from a column whose header contains "video" |
 | resumeData | Buffer | raw PDF bytes (resume upload path) |
 | resumeText | String | parsed text |
 | screeningInterview | enum [Pass,Fail,Not Appeared,Rescheduled,Not interested,Referred to another position,Invited – not booked,Booked – no result yet,Appeared – result not recorded], default null | FREELANCE CODING/Contract columns |
@@ -259,7 +260,7 @@ All base paths mount under `/api`. Responses are `{ success, message, data? }`.
 |--------|----------|-------|
 | POST | `/api/candidates/parse-resume` | multipart `resume` (PDF, ≤5MB) |
 | POST | `/api/candidates/bulk-import` | multipart CSV `file` (≤10MB) |
-| POST | `/api/candidates/bulk-import-with-role` | CSV `file` + `roleCode` body |
+| POST | `/api/candidates/bulk-import-with-role` | CSV `file` + `roleCode` body; headers are matched ignoring case/spacing ("Email ID" = email); a file with no experience column imports as 0 years; a "video" column → `videoUrl`; the form's experience / worked-before / internships answers are joined into `generalRemarks` (shown as "Application answers" in the profile) |
 | POST | `/api/candidates/apply` | multipart `resume` (candidate application) |
 | POST | `/api/candidates/bulk-upload-resumes` | `resumes[]` (≤50 PDFs) + `roleCode` |
 | GET | `/api/candidates/bootcamp-batches` | batch labels with candidate counts (feeds the Bootcamp Batches filter; `options=bootcampBatch&optionValue=<batch>` on the list filters by batch) |

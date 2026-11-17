@@ -1046,7 +1046,7 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
                   </>
                 ) : (
                   <>
-                    <th>Candidate</th><th>Role Code</th><th>Type</th><th>Location</th>
+                    <th>Candidate</th><th>Role Code</th><th>Type</th><th>Location</th><th>Video</th>
                     <th>Current CTC</th><th>Expected CTC</th><th>Notice Period</th>
                     <th>Joining Date (Tentative)</th><th>Joining Date (Confirm)</th>
                     <th>CV Screening</th>
@@ -1069,7 +1069,7 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
               </tr>
               {!freelanceMode && !medicalMode && (
                 <tr>
-                  <th colSpan="10"></th>
+                  <th colSpan="11"></th>
                   <th colSpan={interviewRounds.length + 2} style={{ padding: 0, borderBottom: '1px solid var(--border)', textAlign: 'center', fontSize: 11, color: 'var(--text-500)' }}>
                     + Add Interview Round
                     <button onClick={addInterviewRound} style={{ fontSize: 11, padding: '2px 8px', background: 'var(--primary)', color: 'black', border: '2px solid black', borderRadius: 4, cursor: 'pointer', marginLeft: 6 }}>+</button>
@@ -1261,6 +1261,11 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
                           <>
                             <td>{typeLabel(effectiveEmploymentType(c))}</td>
                             <td>{c.location || '—'}</td>
+                            <td>
+                              {c.videoUrl ? (
+                                <a href={c.videoUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary)', textDecoration: 'underline' }}>▶ Watch</a>
+                              ) : '—'}
+                            </td>
                             <td>{money(c.ctcCurrent)}</td>
                             <td>{money(c.ctcExpected)}</td>
                             <td>{c.noticePeriod || '—'}</td>
