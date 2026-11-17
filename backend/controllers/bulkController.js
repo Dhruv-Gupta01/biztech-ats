@@ -119,8 +119,8 @@ function hasExperienceColumn(records) {
 function findResumeUrl(row) {
   const isUrl = (v) => /^https?:\/\/\S+$/i.test(String(v || '').trim());
   if (isUrl(row.resumeUrl)) return row.resumeUrl.trim();
-  // never pick the intro video as the resume
-  const hit = Object.entries(row).filter(([k]) => k !== 'videoUrl').map(([, v]) => v).find(isUrl);
+  // never pick the intro video, or a link given as a form answer (e.g. a LeetCode profile), as the resume
+  const hit = Object.entries(row).filter(([k]) => k !== 'videoUrl' && !k.startsWith('answer')).map(([, v]) => v).find(isUrl);
   return hit ? hit.trim() : '';
 }
 
