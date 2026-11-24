@@ -49,6 +49,13 @@ export async function fetchCandidateIds(filters = {}) {
   return request(`${BASE_URL}/candidates?${params}`);
 }
 
+// Skill Search "Resume text" source: { data: { term: [candidateId, ...] }, coverage: { withResume, total } }
+// wholeWord=false is the loose "contains" search ("java" also finds "javascript").
+export async function searchResumeText(terms = [], wholeWord = true) {
+  const params = new URLSearchParams({ terms: terms.join(','), match: wholeWord ? 'word' : 'contains' });
+  return request(`${BASE_URL}/candidates/resume-search?${params.toString()}`);
+}
+
 export async function fetchCandidateSources() {
   return request(`${BASE_URL}/candidates/sources`);
 }

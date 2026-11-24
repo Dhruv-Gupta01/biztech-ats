@@ -4,6 +4,7 @@ const { buildHistoryEntries } = require('../utils/history');
 const registry = require('../utils/employmentRegistry');
 const { parseResumeText } = require('../utils/resumeParser');
 const { clear: clearResponseCache } = require('../utils/responseCache');
+const { buildTermRegex } = require('../utils/termMatch');
 
 const STOP_WORDS = new Set([
   'the','and','for','with','that','this','have','from','they','will','would','there','their','what','about','which',
@@ -175,6 +176,21 @@ exports.analyzeBulk = async (req, res) => {
         error: r.error
       }));
 
+      // Auto-save every score as soon as it is generated (no separate "Save Scores" step). Only the rating and
+      // its timestamp are set, so a manual skillScore/experienceScore on the candidate is left untouched.
+      // Best-effort: a failed save is logged but never blocks returning the scores to the recruiter.
+      const scoredAt = new Date();
+      const saveOps = data
+        .filter((d) => d.score != null)
+        .map((d) => ({ updateOne: { filter: { _id: d.candidateId }, update: { $set: { 'score.suitabilityRating': d.score, 'score.scoredAt': scoredAt } } } }));
+      if (saveOps.length) {
+        try {
+          await Candidate.bulkWrite(saveOps);
+        } catch (saveErr) {
+          console.error('Could not auto-save analyzer scores:', saveErr.message);
+        }
+      }
+
       return res.status(200).json({ success: true, count: data.length + unreadable.length, data: [...data, ...unreadable] });
     } catch (analyzerErr) {
       console.error('Resume analyzer service error:', analyzerErr);
@@ -257,12 +273,12 @@ exports.applyCandidate = async (req, res) => {
   }
 };
 
-// GET /api/candidates?roleCode=&status=&minExperience=&maxExperience=&source=&employmentType=&minSuitability=&screeningInterview=&calendlyLinkSent=&calendlyLinkStatus=&ndaIca=&slackStatus=&bootcampAttempts=&bootcampStatus=&onboarding=&project=&projectStatus=
+// GET /api/candidates?roleCode=&status=&minExperience=&maxExperience=&source=&employmentType=&minSuitability=&maxSuitability=&screeningInterview=&calendlyLinkSent=&calendlyLinkStatus=&ndaIca=&slackStatus=&bootcampAttempts=&bootcampStatus=&onboarding=&project=&projectStatus=
 exports.getCandidates = async (req, res) => {
   try {
     const {
       roleCode, status, minExperience, maxExperience, source, employmentType,
-      minSuitability, screeningInterview, calendlyLinkSent, calendlyLinkStatus,
+      minSuitability, maxSuitability, screeningInterview, calendlyLinkSent, calendlyLinkStatus,
       ndaIca, slackStatus, bootcampAttempts, bootcampStatus, onboarding,
       project, projectStatus, options, optionValue, q, page, limit, idsOnly, startDate, endDate
     } = req.query;
@@ -324,7 +340,13 @@ exports.getCandidates = async (req, res) => {
       if (from) filter.createdAt.$gte = from;
       if (to) filter.createdAt.$lte = to;
     }
-    if (minSuitability) filter['score.suitabilityRating'] = { $gte: Number(minSuitability) };
+    // Resume Analyzer score (0-10), inclusive. min/max can be combined for a "between" range; candidates
+    // with no saved score never match (a missing field fails $gte/$lte).
+    if (minSuitability || maxSuitability) {
+      filter['score.suitabilityRating'] = {};
+      if (minSuitability) filter['score.suitabilityRating'].$gte = Number(minSuitability);
+      if (maxSuitability) filter['score.suitabilityRating'].$lte = Number(maxSuitability);
+    }
     if (screeningInterview) filter.screeningInterview = screeningInterview;
     if (calendlyLinkSent) filter.calendlyLinkSent = calendlyLinkSent;
     if (calendlyLinkStatus) filter.calendlyLinkStatus = calendlyLinkStatus;
@@ -406,6 +428,33 @@ exports.getCandidateSources = async (req, res) => {
   } catch (err) {
     console.error(err);
     return res.status(500).json({ success: false, message: 'Server error while fetching sources.' });
+  }
+};
+
+// GET /api/candidates/resume-search?terms=react,node — Skill Search's "Resume text" source.
+// The candidate list leaves resumeText out (it is large), so the page asks here instead: for each term,
+// the ids of candidates whose stored resume text contains it (case-insensitive, plain text not a regex).
+// Whole-word by default ("java" does not match "javascript"); `&match=contains` is the loose substring search
+// (see utils/termMatch.js). `coverage` says how many candidates have resume text stored at all; a resume is only searchable once
+// it has been uploaded/parsed or read by the Resume Analyzer.
+exports.searchResumeText = async (req, res) => {
+  try {
+    const terms = [...new Set(String(req.query.terms || '').split(',').map((t) => t.trim().toLowerCase()).filter(Boolean))]
+      .slice(0, 10)
+      .map((t) => t.slice(0, 60));
+    const wholeWord = req.query.match !== 'contains';
+    const hasText = { resumeText: { $exists: true, $ne: '' } };
+    const [total, withResume, ...hits] = await Promise.all([
+      Candidate.estimatedDocumentCount(),
+      Candidate.countDocuments(hasText),
+      ...terms.map((t) => Candidate.find({ resumeText: { $regex: buildTermRegex(t, wholeWord), $options: 'i' } }, '_id').lean())
+    ]);
+    const data = {};
+    terms.forEach((t, i) => { data[t] = hits[i].map((c) => String(c._id)); });
+    return res.status(200).json({ success: true, data, coverage: { withResume, total } });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Server error while searching resumes.' });
   }
 };
 

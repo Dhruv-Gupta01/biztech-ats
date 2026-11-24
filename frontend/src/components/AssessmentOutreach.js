@@ -5,6 +5,7 @@ import {
   isFreelanceRoleCode, isFreelanceFilter, isFreelanceCandidate, isFreelanceLikeType, effectiveEmploymentType
 } from '../utils/employment';
 import { useEmploymentTypes } from '../contexts/EmploymentTypesContext';
+import usePersistentState from '../utils/usePersistentState';
 
 function fillTemplate(str, vars) {
   return str.replace(/{{(.*?)}}/g, (_, key) => vars[key.trim()] ?? `{{${key.trim()}}}`);
@@ -68,16 +69,20 @@ function AssessmentOutreach() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [selectedIds, setSelectedIds] = useState([]);
-  const [roleFilter, setRoleFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  // Filters survive switching tabs (see utils/usePersistentState.js).
+  const [roleFilter, setRoleFilter] = usePersistentState('outreach.roleFilter', '');
+  const [statusFilter, setStatusFilter] = usePersistentState('outreach.statusFilter', '');
   const { employmentTypes, typeLabel } = useEmploymentTypes();
-  const [empTypeFilter, setEmpTypeFilter] = useState('');
+  const [empTypeFilter, setEmpTypeFilter] = usePersistentState('outreach.empTypeFilter', '');
 
   const [showTemplateManager, setShowTemplateManager] = useState(false);
   const [projects, setProjects] = useState(['Terminus', 'Snorkle', 'Alegion']);
-  const [freelanceFilters, setFreelanceFilters] = useState(EMPTY_FREELANCE_FILTERS);
+  const [freelanceFilters, setFreelanceFilters] = usePersistentState('outreach.freelanceFilters', EMPTY_FREELANCE_FILTERS);
   // Candidates already sent the Calendly link are left out by default so outreach doesn't repeat them.
-  const [hideCalendlySent, setHideCalendlySent] = useState(true);
+  const [hideCalendlySent, setHideCalendlySent] = usePersistentState('outreach.hideCalendlySent', true);
+  // "Imported to ATS" window (YYYY-MM-DD, the recruiter's local days), filtered on the candidate's createdAt.
+  const [importFrom, setImportFrom] = usePersistentState('outreach.importFrom', '');
+  const [importTo, setImportTo] = usePersistentState('outreach.importTo', '');
   const [templateId, setTemplateId] = useState('');
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState(null);
@@ -252,11 +257,24 @@ function AssessmentOutreach() {
   const filteredCandidates = useMemo(() => {
     // Picking "Sent" in the Calendly Link Sent dropdown is an explicit request to see them, so it wins.
     const wantsSent = freelanceMode && freelanceFilters.calendlyLinkSent === 'Sent';
-    const pool = hideCalendlySent && !wantsSent ? candidates.filter((c) => c.calendlyLinkSent !== 'Sent') : candidates;
+    const unsent = hideCalendlySent && !wantsSent ? candidates.filter((c) => c.calendlyLinkSent !== 'Sent') : candidates;
+    // Import date range, applied in every view: a candidate with no import date never matches while it is set.
+    let pool = unsent;
+    if (importFrom || importTo) {
+      const from = importFrom ? new Date(`${importFrom}T00:00:00`).getTime() : null;
+      const to = importTo ? new Date(`${importTo}T23:59:59.999`).getTime() : null;
+      pool = unsent.filter((c) => {
+        const t = c.createdAt ? new Date(c.createdAt).getTime() : NaN;
+        return Number.isFinite(t) && (from === null || t >= from) && (to === null || t <= to);
+      });
+    }
     if (freelanceMode) {
       const f = freelanceFilters;
       // An F-prefixed role code is FREELANCE CODING regardless of stored employmentType.
       let data = pool.filter(isFreelanceCandidate);
+      // The freelance view groups Contract / Freelance / Freelance-Contract / Freelance Coding together,
+      // but a picked Employment Type must still narrow it (it used to be ignored here).
+      if (empTypeFilter) data = data.filter((c) => c.employmentType === empTypeFilter || effectiveEmploymentType(c) === empTypeFilter);
       if (f.roleCode) data = data.filter((c) => c.roleCode === f.roleCode);
       // Saved analyzer score (0-10): >=, <=, or between (inclusive). Unscored candidates never match a score filter.
       const lo = f.analyzerMode !== 'lte' && f.analyzerMinScore !== '' ? Number(f.analyzerMinScore) : null;
@@ -286,7 +304,7 @@ function AssessmentOutreach() {
       (!empTypeFilter || effectiveEmploymentType(c) === empTypeFilter) &&
       (!roleFilter || c.roleCode === roleFilter) &&
       (!statusFilter || c.status === statusFilter));
-  }, [candidates, freelanceMode, empTypeFilter, roleFilter, statusFilter, freelanceFilters, hideCalendlySent]);
+  }, [candidates, freelanceMode, empTypeFilter, roleFilter, statusFilter, freelanceFilters, hideCalendlySent, importFrom, importTo]);
 
   const calendlySentCount = useMemo(() => candidates.filter((c) => c.calendlyLinkSent === 'Sent').length, [candidates]);
   const toggleHideCalendlySent = (hide) => {
@@ -323,13 +341,16 @@ function AssessmentOutreach() {
     setRoleFilter('');
     setStatusFilter('');
     setFreelanceFilters(EMPTY_FREELANCE_FILTERS);
+    setImportFrom('');
+    setImportTo('');
   };
 
   // The score mode dropdown always has a value, and min/max together count as one filter.
   const { analyzerMode, analyzerMinScore, analyzerMaxScore, ...otherFreelanceFilters } = freelanceFilters;
-  const activeFilterCount = freelanceMode
+  const importFilterCount = importFrom || importTo ? 1 : 0;
+  const activeFilterCount = (freelanceMode
     ? Object.values(otherFreelanceFilters).filter(Boolean).length + (analyzerMinScore !== '' || analyzerMaxScore !== '' ? 1 : 0)
-    : [empTypeFilter, roleFilter, statusFilter].filter(Boolean).length;
+    : [empTypeFilter, roleFilter, statusFilter].filter(Boolean).length) + importFilterCount;
 
   const roleOptionLabel = (r) => `${r.code} — ${r.title}${isFreelanceRoleCode(r.code) ? ' · Freelance Coding' : ''}`;
 
@@ -450,6 +471,15 @@ function AssessmentOutreach() {
                  </select>
               </div>
 
+              <div className={`outreach-filter-field${importFrom || importTo ? ' is-set' : ''}`}>
+                <label title="Date the candidate was imported into the ATS">Imported to ATS (date range)</label>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input type="date" value={importFrom} max={importTo || undefined} onChange={(e) => setImportFrom(e.target.value)} aria-label="Imported from" />
+                  <span style={{ fontSize: 12, color: 'var(--text-500)' }}>to</span>
+                  <input type="date" value={importTo} min={importFrom || undefined} onChange={(e) => setImportTo(e.target.value)} aria-label="Imported to" />
+                </div>
+              </div>
+
               {!freelanceMode && (
                 <>
                   <div className={`outreach-filter-field${roleFilter ? ' is-set' : ''}`}>
@@ -542,7 +572,7 @@ function AssessmentOutreach() {
                     <div>
                       <strong>{c.fullName}</strong>
                       <div style={{ fontSize: 11.5, color: 'var(--text-500)' }}>
-                        {c.roleCode} · {freelanceMode ? `Analyzer ${c.score?.suitabilityRating ?? '—'}` : typeLabel(effectiveEmploymentType(c))} · {c.status}
+                        {c.roleCode} · {freelanceMode ? `Analyzer ${c.score?.suitabilityRating ?? '—'}` : typeLabel(effectiveEmploymentType(c))} · {c.status}{c.createdAt ? ` · Imported ${new Date(c.createdAt).toLocaleDateString()}` : ''}
                       </div>
                     </div>
                   </label>

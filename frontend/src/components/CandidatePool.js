@@ -10,6 +10,7 @@ import {
 } from '../api/api';
 import { isFreelanceFilter, isFreelanceLikeType, effectiveEmploymentType } from '../utils/employment';
 import { getColumnsForType, getOptionsForColumn } from '../utils/columnOptions';
+import usePersistentState from '../utils/usePersistentState';
 import { useEmploymentTypes } from '../contexts/EmploymentTypesContext';
 
 const fallbackTypeLabel = (t) => (t === 'Contract' ? 'Contractual' : t === 'Part-Time' ? 'Part Time' : t === 'FREELANCE CODING' ? 'Freelance Coding' : t === 'Medical Hiring' ? 'Medical Hiring' : (t === 'Freelance' || t === 'Freelance/Contract') ? t : 'Full Time');
@@ -94,8 +95,9 @@ function CandidatePool() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
-  const [filters, setFilters] = useState({ employmentType: '', roleCode: '', statusColumn: '', statusColumnValue: '', minExperience: '', maxExperience: '', source: '', startDate: '', endDate: '' });
-  const [query, setQuery] = useState('');
+  // Filters, search and page survive switching tabs (see utils/usePersistentState.js).
+  const [filters, setFilters] = usePersistentState('pool.filters', { employmentType: '', roleCode: '', statusColumn: '', statusColumnValue: '', minExperience: '', maxExperience: '', source: '', startDate: '', endDate: '', analyzerMode: 'gte', analyzerMinScore: '', analyzerMaxScore: '' });
+  const [query, setQuery] = usePersistentState('pool.query', '');
 
   const [analyzerScores, setAnalyzerScores] = useState({});
   const [analyzing, setAnalyzing] = useState(false);
@@ -107,9 +109,10 @@ function CandidatePool() {
   const [selectedIds, setSelectedIds] = useState([]);
   // Render one page of rows at a time — thousands of rows with inline selects freeze the browser.
   const PAGE_SIZE = 100;
-  const [page, setPage] = useState(0);
+  const [page, setPage] = usePersistentState('pool.page', 0);
   const [total, setTotal] = useState(0);
-  const [debouncedQuery, setDebouncedQuery] = useState('');
+  // Starts at the restored search text so the first load already applies it.
+  const [debouncedQuery, setDebouncedQuery] = useState(query);
   const filterSig = useRef('');
   const [slackMappings, setSlackMappings] = useState([]);
   const [slackTargetId, setSlackTargetId] = useState('');
@@ -390,6 +393,14 @@ function CandidatePool() {
     // Import window, as the user's local calendar days (start of the first day to end of the last).
     if (filters.startDate) p.startDate = new Date(`${filters.startDate}T00:00:00`).toISOString();
     if (filters.endDate) p.endDate = new Date(`${filters.endDate}T23:59:59.999`).toISOString();
+    // Resume Analyzer score (0-10): at least / at most / between (inclusive), same rules as Assessment & Outreach.
+    const lo = filters.analyzerMode !== 'lte' && filters.analyzerMinScore !== '' ? Number(filters.analyzerMinScore) : null;
+    const hi = filters.analyzerMode !== 'gte' && filters.analyzerMaxScore !== '' ? Number(filters.analyzerMaxScore) : null;
+    if (lo !== null || hi !== null) {
+      const [min, max] = lo !== null && hi !== null && lo > hi ? [hi, lo] : [lo, hi];
+      if (min !== null) p.minSuitability = min;
+      if (max !== null) p.maxSuitability = max;
+    }
     if (debouncedQuery.trim()) p.q = debouncedQuery.trim();
     return p;
   };
@@ -742,6 +753,10 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
           }
           // Show scores as each chunk lands.
           setAnalyzerScores((prev) => ({ ...prev, ...scoreMap }));
+          // The server already saved these; mirror them on the rows so score filters see them without a reload.
+          setCandidates((prev) => prev.map((c) => (scoreMap[c._id]
+            ? { ...c, score: { ...(c.score || {}), suitabilityRating: scoreMap[c._id].score, scoredAt: new Date().toISOString() } }
+            : c)));
         }
       }
       const parts = [];
@@ -760,30 +775,6 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
   const breakdownTitle = (a) => (a && a.breakdown && a.breakdown.length)
     ? a.breakdown.map((b) => `${b.criterion} (weight ${b.weight}): ${b.score}/100`).join('\n')
     : undefined;
-
-  const saveAnalyzerScores = async () => {
-    setAnalyzerError('');
-    try {
-      const selectedScores = selectedIds.map((id) => ({ id, score: analyzerScores[id] })).filter((s) => s.score != null);
-      if (selectedScores.length === 0) {
-        setAnalyzerError('No analyzer scores to save. Run Resume Analyzer first.');
-        return;
-      }
-      const savePromises = selectedScores.map((s) =>
-        updateCandidate(s.id, {
-          score: { suitabilityRating: s.score.score, scoredAt: new Date().toISOString() },
-          changedBy: user?.fullName
-        })
-      );
-      await Promise.all(savePromises);
-      console.log('[Analyzer] scores saved to backend');
-      await loadCandidates();
-      setAnalyzerError('');
-    } catch (saveErr) {
-      console.error('[Analyzer] failed to save scores:', saveErr);
-      setAnalyzerError('Could not save scores. Please try again.');
-    }
-  };
 
   const startEditingDate = (id, field) => {
     setEditingDate({ candidateId: id, field });
@@ -903,6 +894,27 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
         </select>
         <input type="number" min="0" placeholder="Min Exp (yrs)" value={filters.minExperience} onChange={(e) => setFilters({ ...filters, minExperience: e.target.value })} style={{ width: 110 }} />
         <input type="number" min="0" placeholder="Max Exp (yrs)" value={filters.maxExperience} onChange={(e) => setFilters({ ...filters, maxExperience: e.target.value })} style={{ width: 110 }} />
+        <label style={{ fontSize: 12, color: 'var(--text-500)', display: 'flex', alignItems: 'center', gap: 6 }} title="Saved Resume Analyzer score, 0-10. Candidates without a saved score are excluded while this filter is on.">Resume score
+          <select value={filters.analyzerMode} onChange={(e) => setFilters({ ...filters, analyzerMode: e.target.value })} aria-label="Score comparison">
+            <option value="gte">≥ at least</option>
+            <option value="lte">≤ at most</option>
+            <option value="between">Between</option>
+          </select>
+          {filters.analyzerMode !== 'lte' && (
+            <input type="number" min="0" max="10" step="0.1" style={{ width: 80 }}
+              placeholder={filters.analyzerMode === 'between' ? 'From' : 'e.g. 7'}
+              value={filters.analyzerMinScore}
+              onChange={(e) => setFilters({ ...filters, analyzerMinScore: e.target.value })}
+              aria-label={filters.analyzerMode === 'between' ? 'Score from' : 'Minimum score'} />
+          )}
+          {filters.analyzerMode !== 'gte' && (
+            <input type="number" min="0" max="10" step="0.1" style={{ width: 80 }}
+              placeholder={filters.analyzerMode === 'between' ? 'To' : 'e.g. 5'}
+              value={filters.analyzerMaxScore}
+              onChange={(e) => setFilters({ ...filters, analyzerMaxScore: e.target.value })}
+              aria-label={filters.analyzerMode === 'between' ? 'Score to' : 'Maximum score'} />
+          )}
+        </label>
         <label style={{ fontSize: 12, color: 'var(--text-500)' }} title="Date the candidate was imported into the ATS">Imported from{' '}
           <input type="date" value={filters.startDate} max={filters.endDate || undefined} onChange={(e) => setFilters({ ...filters, startDate: e.target.value })} />
         </label>
@@ -916,8 +928,7 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
         <button className="btn-secondary" onClick={downloadSampleCSV}>Download Sample CSV</button>
         <input ref={csvInputRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleImportFile} />
         <button className="btn-primary" onClick={triggerImport} disabled={importing}>{importing ? 'Importing...' : '⭱ Import CSV'}</button>
-        <button className="btn-secondary" onClick={runBulkAnalyze} disabled={analyzing || selectedIds.length === 0} title="Scores the selected candidates against their role's JD and criteria. Mixed role codes are scored in separate groups, and each role needs a job description (Roles & Codes).">{analyzing ? `Analyzing ${analyzeProgress}...` : 'Resume Analyzer'}</button>
-        <button className="btn-secondary" onClick={saveAnalyzerScores} disabled={selectedIds.length === 0 || Object.keys(analyzerScores).length === 0} title="Save analyzer scores for selected candidates">💾 Save Scores</button>
+        <button className="btn-secondary" onClick={runBulkAnalyze} disabled={analyzing || selectedIds.length === 0} title="Scores the selected candidates against their role's JD and criteria; scores are saved automatically. Mixed role codes are scored in separate groups, and each role needs a job description (Roles & Codes).">{analyzing ? `Analyzing ${analyzeProgress}...` : 'Resume Analyzer'}</button>
         {freelanceMode && (
           <button
             className="btn-secondary"

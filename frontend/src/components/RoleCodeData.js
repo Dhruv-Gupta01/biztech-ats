@@ -4,6 +4,7 @@ import { fetchCandidates, fetchRoles, updateCandidate } from '../api/api';
 import CandidateProfileModal from './CandidateProfileModal';
 import { effectiveEmploymentType, isFreelanceCandidate } from '../utils/employment';
 import { useEmploymentTypes } from '../contexts/EmploymentTypesContext';
+import usePersistentState from '../utils/usePersistentState';
 
 const STATUS_OPTIONS = [
   'Information Form Response',
@@ -30,14 +31,15 @@ function RoleCodeData() {
   const [roles, setRoles] = useState([]);
   const [allCandidates, setAllCandidates] = useState([]);
   const [loadError, setLoadError] = useState('');
-  const [selectedRoleCode, setSelectedRoleCode] = useState('');
+  // The chosen role and filters survive switching tabs (see utils/usePersistentState.js).
+  const [selectedRoleCode, setSelectedRoleCode] = usePersistentState('roleData.roleCode', '');
   const [savingNotesId, setSavingNotesId] = useState(null);
   const [profileCandidate, setProfileCandidate] = useState(null);
   const [notesDraft, setNotesDraft] = useState({});
 
   const { employmentTypes } = useEmploymentTypes();
 
-  const [filters, setFilters] = useState({ employmentType: '', status: '', source: '', query: '' });
+  const [filters, setFilters] = usePersistentState('roleData.filters', { employmentType: '', status: '', source: '', query: '' });
 
   useEffect(() => {
     Promise.all([fetchRoles(), fetchCandidates()])

@@ -6,6 +6,7 @@ import { fetchStatistics, exportStatisticsCSV } from '../api/api';
 import { getColumnsForType, getOptionsForColumn } from '../utils/columnOptions';
 import { fetchRoles } from '../api/api';
 import { useEmploymentTypes } from '../contexts/EmploymentTypesContext';
+import usePersistentState from '../utils/usePersistentState';
 
 Chart.register(...registerables);
 
@@ -53,7 +54,8 @@ function StatisticsReport() {
   const [exporting, setExporting] = useState(false);
   const { employmentTypes } = useEmploymentTypes();
   const [roleCodes, setRoleCodes] = useState([]);
-  const [filters, setFilters] = useState({
+  // Filters survive switching tabs (see utils/usePersistentState.js).
+  const [filters, setFilters] = usePersistentState('statistics.filters', {
     startDate: '',
     endDate: '',
     roleCode: '',

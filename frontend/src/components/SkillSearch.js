@@ -1,28 +1,51 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import StatusBadge from './StatusBadge';
 import CandidateProfileModal from './CandidateProfileModal';
-import { fetchCandidates, fetchEmailTemplates, fetchRoles, sendOutreachEmail } from '../api/api';
+import { fetchCandidates, fetchEmailTemplates, fetchRoles, sendOutreachEmail, searchResumeText } from '../api/api';
 import TemplateManager from './TemplateManager';
 import { effectiveEmploymentType } from '../utils/employment';
 import { getColumnsForType } from '../utils/columnOptions';
 import { useEmploymentTypes } from '../contexts/EmploymentTypesContext';
+import usePersistentState from '../utils/usePersistentState';
 
 function fillTemplate(str, vars) {
   return str.replace(/{{(.*?)}}/g, (_, key) => vars[key.trim()] ?? `{{${key.trim()}}}`);
 }
+
+// Where a search term is looked for. A term matches a candidate when it is found in ANY ticked source,
+// and every term has to match (same "all terms" rule the page always had). `resume` is searched on the
+// server (the list payload leaves resume text out); the rest are fields already on the candidate.
+const SEARCH_SOURCES = [
+  { key: 'skills', label: 'Skills list', hint: "The candidate's parsed skills" },
+  { key: 'resume', label: 'Resume text', hint: 'Full text of the stored resume (only candidates whose resume has been uploaded or read by the Resume Analyzer)' },
+  { key: 'designation', label: 'Designation', hint: 'Job title / designation' },
+  { key: 'remarks', label: 'Application answers', hint: 'General remarks, incl. form answers (experience, LeetCode / platforms, internships)' },
+  { key: 'education', label: 'Education', hint: 'Qualification' }
+];
+const DEFAULT_SOURCES = ['skills'];
 
 function SkillSearch() {
   const [candidates, setCandidates] = useState([]);
   const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [skillQuery, setSkillQuery] = useState('');
-  const [filters, setFilters] = useState({
+  // Search and filters survive switching tabs (see utils/usePersistentState.js).
+  const [skillQuery, setSkillQuery] = usePersistentState('skills.query', '');
+  const [filters, setFilters] = usePersistentState('skills.filters', {
     roleCode: '',
     employmentType: '',
     statusColumn: '',
     experience: '',
     scoreMin: ''
+  });
+
+  // Which fields the skill terms are searched in (see SEARCH_SOURCES); at least one stays ticked.
+  const [sources, setSources] = usePersistentState('skills.sources', DEFAULT_SOURCES);
+  // Resume text is matched as whole words by default ("java" skips "javascript", "r" skips every word with an r).
+  const [wholeWord, setWholeWord] = usePersistentState('skills.wholeWord', true);
+  const toggleSource = (key) => setSources((prev) => {
+    if (!prev.includes(key)) return [...prev, key];
+    return prev.length > 1 ? prev.filter((k) => k !== key) : prev;
   });
 
   const [selectedIds, setSelectedIds] = useState([]);
@@ -73,14 +96,43 @@ function SkillSearch() {
       .filter(s => s.length > 0);
   }, [skillQuery]);
 
+  // Resume-text matches come from the server, per term, once the terms stop changing for a moment.
+  const useResume = sources.includes('resume') && skillsList.length > 0;
+  const termsKey = `${skillsList.join(',')}|${wholeWord ? 'word' : 'contains'}`;
+  const [resumeHits, setResumeHits] = useState({ key: '', sets: {}, coverage: null, error: '' });
+  useEffect(() => {
+    if (!useResume) return undefined;
+    let cancelled = false;
+    const t = setTimeout(() => {
+      searchResumeText(skillsList, wholeWord)
+        .then((res) => {
+          if (cancelled) return;
+          const sets = {};
+          Object.entries(res.data || {}).forEach(([term, ids]) => { sets[term] = new Set(ids); });
+          setResumeHits({ key: termsKey, sets, coverage: res.coverage || null, error: '' });
+        })
+        .catch((err) => { if (!cancelled) setResumeHits({ key: termsKey, sets: {}, coverage: null, error: err.message }); });
+    }, 400);
+    return () => { cancelled = true; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useResume, termsKey]);
+  const resumeReady = !useResume || resumeHits.key === termsKey;
+
   // Render only the first rows; thousands of DOM rows freeze the browser.
   const [shown, setShown] = useState(200);
   const results = useMemo(() => {
+    const has = (text, term) => String(text || '').toLowerCase().includes(term);
     return candidates.filter((c) => {
       const cSkills = (c.skills || []).map(s => s.toLowerCase().trim());
 
+      // Every term must be found in at least one ticked source.
       const matchesSkills = skillsList.length > 0
-        ? skillsList.every(skill => cSkills.some(cs => cs.includes(skill)))
+        ? skillsList.every((term) =>
+          (sources.includes('skills') && cSkills.some(cs => cs.includes(term)))
+          || (sources.includes('designation') && has(c.designation, term))
+          || (sources.includes('remarks') && has(c.generalRemarks, term))
+          || (sources.includes('education') && has(c.education, term))
+          || (sources.includes('resume') && resumeReady && resumeHits.sets[term]?.has(String(c._id))))
         : true;
 
       const matchesRoleCode = filters.roleCode
@@ -117,7 +169,7 @@ function SkillSearch() {
 
       return matchesSkills && matchesRoleCode && matchesEmploymentType && matchesExperience && matchesScore;
     });
-  }, [candidates, skillsList, filters]);
+  }, [candidates, skillsList, filters, sources, resumeHits, resumeReady]);
 
   const getStatusDisplay = (c) => {
     const assessmentStatus = c.assessmentStatus || 'Not Set';
@@ -196,6 +248,8 @@ function SkillSearch() {
 
   const handleClearFilters = () => {
     setSkillQuery('');
+    setSources(DEFAULT_SOURCES);
+    setWholeWord(true);
     setFilters({
       roleCode: '',
       employmentType: '',
@@ -216,7 +270,7 @@ function SkillSearch() {
   return (
     <>
       <h1 className="page-title">Skill Search</h1>
-      <p className="page-sub">Search candidates by skills — results match against candidate profile skills</p>
+      <p className="page-sub">Search candidates by skills — choose below which fields each skill is looked for in</p>
 
       {loadError && <div className="alert alert-error">⚠️ {loadError}</div>}
       {sendResult && (
@@ -268,6 +322,30 @@ function SkillSearch() {
         <input type="number" min="0" placeholder="Min experience (yrs)" value={filters.experience} onChange={(e) => setFilters({ ...filters, experience: e.target.value })} style={{ width: 130 }} />
         <input type="number" min="0" max="10" placeholder="Min score" value={filters.scoreMin} onChange={(e) => setFilters({ ...filters, scoreMin: e.target.value })} style={{ width: 110 }} />
         <button className="btn-secondary" onClick={handleClearFilters}>Clear</button>
+      </div>
+
+      <div className="filters-row" style={{ alignItems: 'center', gap: 14 }}>
+        <span style={{ fontSize: 13, color: 'var(--text-500)' }}>Search in:</span>
+        {SEARCH_SOURCES.map((src) => (
+          <label key={src.key} title={src.hint} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, cursor: 'pointer' }}>
+            <input type="checkbox" checked={sources.includes(src.key)} onChange={() => toggleSource(src.key)} />
+            {src.label}
+          </label>
+        ))}
+        {sources.includes('resume') && (
+          <label title="On: 'java' will not match 'javascript' and 'r' will not match every word. Off: plain contains-search, which also finds 'reactjs' for 'react'." style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, cursor: 'pointer' }}>
+            <input type="checkbox" checked={wholeWord} onChange={(e) => setWholeWord(e.target.checked)} />
+            Whole word (resume)
+          </label>
+        )}
+        {sources.length === 1 && sources[0] === 'resume' && <span style={{ fontSize: 12, color: 'var(--text-500)' }}>(resume only)</span>}
+        {useResume && !resumeReady && <span style={{ fontSize: 12, color: 'var(--text-500)' }}>Searching resumes…</span>}
+        {useResume && resumeHits.error && <span style={{ fontSize: 12, color: 'var(--red)' }}>Resume search failed: {resumeHits.error}</span>}
+        {useResume && resumeReady && resumeHits.coverage && (
+          <span style={{ fontSize: 12, color: 'var(--text-500)' }} title="A resume is searchable once it has been uploaded/parsed or read by the Resume Analyzer.">
+            Resume text is stored for {resumeHits.coverage.withResume.toLocaleString()} of {resumeHits.coverage.total.toLocaleString()} candidates
+          </span>
+        )}
       </div>
 
       <div className="filters-row">

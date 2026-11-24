@@ -271,6 +271,7 @@ All base paths mount under `/api`. Responses are `{ success, message, data? }`.
 | POST | `/api/candidates/:id/interview-stage` | `{interviewer, rating, feedback}` |
 | POST | `/api/candidates/:id/analyze` | resume analyzer |
 | POST | `/api/candidates/analyze-bulk` | `{candidateIds[]}` (max 100 per request; the pool sends chunks of 20); candidates with only a Google Drive `resumeUrl` have it fetched and read first (`services/resumeFetchService.js`, text cached in `resumeText`); scores against the role's JD plus its `criteria` / `jdWeight` |
+| GET | `/api/candidates/resume-search` | `?terms=a,b` → `{data:{term:[candidateId]}, coverage:{withResume,total}}`; Skill Search's "Resume text" source (the list API omits `resumeText`); plain-text, case-insensitive, whole-word by default (`&match=contains` for loose substring; rules in `utils/termMatch.js`), max 10 terms; only candidates with stored resume text are searchable |
 | GET | `/api/candidates/status-updates` | `?since=<ISO>` → calendlyLinkSent/SentAt/Status, ndaIca, slackStatus of candidates changed after `since` (+ `serverTime`); the Outreach page polls it every 30s |
 | POST | `/api/candidates/:id/calendly-status` | best-effort Calendly lookup |
 | PATCH | `/api/candidates/:id` | update fields |
