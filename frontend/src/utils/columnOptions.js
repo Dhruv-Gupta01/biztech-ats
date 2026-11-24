@@ -24,6 +24,8 @@ export const getColumnsForType = (employmentType) => {
       { field: 'slackStatus', label: 'Slack' },
       { field: 'bootcampAttempts', label: 'Bootcamp Attempts' },
       { field: 'bootcampStatus', label: 'Bootcamp Status' },
+      { field: 'bootcampOrientation', label: 'Bootcamp Orientation' },
+      { field: 'orientationInterest', label: 'Interest after orientation' },
       { field: 'onboarding', label: 'Onboarding' },
       { field: 'project', label: 'Project' },
       { field: 'projectStatus', label: 'Project Status' }
@@ -62,6 +64,8 @@ export const getOptionsForColumn = (field, candidates = []) => {
     slackStatus: ['Invited', 'Joined', 'Not Joined', 'Not Interested'],
     bootcampAttempts: ['Attempt 1', 'Attempt 2', 'Attempt 3'],
     bootcampStatus: ['Pass', 'Fail', 'Full Fail', 'Not Active', 'Active', 'Direct to client'],
+    bootcampOrientation: ['Attempted', 'Not attempted'],
+    orientationInterest: ['Interested', 'Not interested'],
     onboarding: ['Sent', 'Not Sent', 'Not Interested', 'Done'],
     projectStatus: ['On Hold', 'Complete', 'Not Active', 'In Pipeline', 'Banned / Disqualified'],
     resumeAnalyzerStatus: ['Selected', 'Not selected'],

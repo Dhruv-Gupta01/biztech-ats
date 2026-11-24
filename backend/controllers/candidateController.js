@@ -642,7 +642,7 @@ exports.scoreCandidate = async (req, res) => {
 const FREELANCE_NULLABLE_FIELDS = [
   'screeningInterview', 'calendlyLinkSent', 'calendlyLinkStatus', 'ndaIca',
   'slackStatus', 'bootcampAttempts', 'bootcampStatus', 'onboarding',
-  'project', 'projectStatus'
+  'project', 'projectStatus', 'bootcampOrientation', 'orientationInterest'
 ];
 
 const MEDICAL_NULLABLE_FIELDS = [

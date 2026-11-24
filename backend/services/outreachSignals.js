@@ -35,15 +35,15 @@ async function applyOutreachSignals(emails, signals) {
   const base = { email: { $in: list } };
 
   if (signals.calendly) {
-    const r = await Candidate.updateMany(base, { $set: { calendlyLinkSent: 'Sent', calendlyLinkSentAt: now, updatedAt: now } });
+    const r = await Candidate.updateMany(base, { $set: { calendlyLinkSent: 'Sent', calendlyLinkSentAt: now, updatedAt: now }, $min: { 'stageDates.linkSent': now } });
     modified.calendlyLinkSent = r.modifiedCount || 0;
   }
   if (signals.ndaIca) {
-    const r = await Candidate.updateMany({ ...base, ndaIca: { $in: [null, 'Not Sent'] } }, { $set: { ndaIca: 'Sent', updatedAt: now } });
+    const r = await Candidate.updateMany({ ...base, ndaIca: { $in: [null, 'Not Sent'] } }, { $set: { ndaIca: 'Sent', updatedAt: now }, $min: { 'stageDates.ndaSent': now } });
     modified.ndaIca = r.modifiedCount || 0;
   }
   if (signals.slack) {
-    const r = await Candidate.updateMany({ ...base, slackStatus: null }, { $set: { slackStatus: 'Invited', updatedAt: now } });
+    const r = await Candidate.updateMany({ ...base, slackStatus: null }, { $set: { slackStatus: 'Invited', updatedAt: now }, $min: { 'stageDates.slackInvited': now } });
     modified.slackStatus = r.modifiedCount || 0;
   }
 

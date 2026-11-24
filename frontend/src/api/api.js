@@ -390,6 +390,14 @@ export async function fetchStatistics(params = {}) {
   return request(`${BASE_URL}/statistics?${qs}`);
 }
 
+// Statistics & Report -> Coding: stage counts by the date each stage was reached.
+export async function fetchCodingFunnel(params = {}) {
+  const qs = new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== ''))
+  ).toString();
+  return request(`${BASE_URL}/statistics/coding-funnel?${qs}`);
+}
+
 export async function exportStatisticsCSV(params = {}) {
   const qs = new URLSearchParams(
     Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== ''))

@@ -162,6 +162,10 @@ Routing is manual (`views[view] || Dashboard`), not a router library. `api.js` c
 | slackStatus | enum [Invited,Joined,Not Joined,Not Interested], default null | Invited is set automatically when an outreach email carries a slack.com invite link (only from blank) |
 | bootcampAttempts | enum [Attempt 1,Attempt 2,Attempt 3], default null | |
 | bootcampStatus | enum [Pass,Fail,Full Fail,Not Active,Active,Direct to client], default null | |
+| bootcampOrientation | enum [Attempted,Not attempted], default null | bootcamp orientation (Coding funnel stage); dropdown in the pool's freelance view |
+| orientationInterest | enum [Interested,Not interested], default null | interest after orientation (from the interest form); dropdown in the pool |
+| calendlyAccount | String, default null | which connected Calendly account (e.g. 'Kartik Mishra', 'Hiring Team') the booking is on; set by the Calendly sync, older ones via `scripts/backfillCalendlyAccount.js` |
+| stageDates | {stageKey: Date} | first time each Coding-funnel stage was reached (`utils/stageDates.js`). Stamped on transitions only: the model's save hook, `$min` in the Calendly sync / outreach signals. Absent = not recorded (reached before tracking); `imported`/`analysed`/`linkSent` fall back to createdAt / score.scoredAt / calendlyLinkSentAt |
 | onboarding | enum [Sent,Not Sent,Not Interested,Done], default null | |
 | bootcampBatches | [{batch, joined(Joined/Not joined/null), note}], default [] | bootcamp cohorts from the batch sheet; a person can be in several |
 | project | String, default null | freelance project name |
@@ -328,6 +332,7 @@ All base paths mount under `/api`. Responses are `{ success, message, data? }`.
 |--------|----------|-------|
 | GET | `/api/statistics` | filters: startDate, endDate, portal, roleCode, status, employmentType, minScore, maxScore, minExperience, maxExperience, location, statusColumn, statusColumnValue |
 | GET | `/api/statistics/export/csv` | same filters → CSV file |
+| GET | `/api/statistics/coding-funnel` | Statistics & Report → **Coding** tab. `from`,`to` (YYYY-MM-DD, local days, default last 30), `granularity` day\|week\|month, `tzOffset` (browser `getTimezoneOffset()`), `scoreMin`/`scoreMax` (default 4–10), `roleCode`, `calendarAccount` (`Unknown` = not recorded). Coding candidates = freelance/contract types or F-prefixed role codes. Per stage: `total` (all time), `undated`, `inPeriod`, `series` per bucket; plus breakdowns of booked-by-calendar, bootcamp-passed-by-attempt, onboarded-by-project. Logic in `controllers/codingFunnelController.js` |
 
 ### Retention (`retentionRoutes.js`)
 | Method | Endpoint | Notes |

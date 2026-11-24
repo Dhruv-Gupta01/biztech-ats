@@ -13,7 +13,7 @@
 // It only ever moves people towards Booked (or fills a blank); it never overwrites a stored Booked.
 // Calls are paced; on a 429 the run waits (Retry-After, else a minute) and carries on. Never throws.
 const Candidate = require('../models/Candidate');
-const { checkCalendlyStatus, calendlyConfigured, listRecentEvents, listEventInvitees } = require('./calendlyService');
+const { checkCalendlyStatus, calendlyConfigured, listRecentEvents, listEventInvitees, describeAccounts } = require('./calendlyService');
 
 const RECENT_DAYS = 14;
 const EVENT_LOOKBACK_DAYS = 14;    // events that started up to this long ago, plus everything upcoming
@@ -53,13 +53,24 @@ async function syncFromBookings(summary, { paceMs, rateLimitWaitMs }) {
     if (events.accountErrors && events.accountErrors.length) summary.accountErrors = events.accountErrors;
     const hosts = new Set();
     const emails = new Set();
+    const bookings = new Map(); // email -> { account, bookedAt }
+    let accountNames = [];
+    try { accountNames = (await describeAccounts()).map((a) => a.name || null); } catch (err) { /* account names are optional */ }
     for (const ev of events) {
       (ev.event_memberships || []).forEach((m) => m && m.user && hosts.add(m.user));
       const uuid = String(ev.uri || '').split('/').pop();
       if (!uuid) continue;
       if (seenEvents.get(uuid) === ev.updated_at) continue; // already read this version of the event
       const invitees = await withRateLimitWait(() => listEventInvitees(uuid, ev._account), summary, rateLimitWaitMs);
-      invitees.forEach((i) => i && i.email && emails.add(String(i.email).toLowerCase().trim()));
+      invitees.forEach((i) => {
+        if (!i || !i.email) return;
+        const email = String(i.email).toLowerCase().trim();
+        emails.add(email);
+        // Remember which account the booking is on and when it was made (earliest booking wins).
+        const at = i.created_at ? new Date(i.created_at) : null;
+        const prev = bookings.get(email);
+        if (!prev || (at && prev.bookedAt && at < prev.bookedAt)) bookings.set(email, { account: accountNames[ev._account] || null, bookedAt: at });
+      });
       seenEvents.set(uuid, ev.updated_at);
       summary.eventsRead = (summary.eventsRead || 0) + 1;
       if (paceMs) await sleep(paceMs);
@@ -68,7 +79,7 @@ async function syncFromBookings(summary, { paceMs, rateLimitWaitMs }) {
     summary.inviteesRead = emails.size;
     if (emails.size === 0) return;
 
-    const found = await Candidate.find({ email: { $in: [...emails] } }, 'email calendlyLinkStatus calendlyLinkSent').lean();
+    const found = await Candidate.find({ email: { $in: [...emails] } }, 'email calendlyLinkStatus calendlyLinkSent calendlyAccount').lean();
     const matched = new Set(found.map((c) => c.email));
     summary.bookingsUnmatched = [...emails].filter((e) => !matched.has(e)).length; // count only: emails stay out of the status endpoint
     summary.bookingsMatched = matched.size;
@@ -76,9 +87,16 @@ async function syncFromBookings(summary, { paceMs, rateLimitWaitMs }) {
       const set = {};
       if (c.calendlyLinkStatus !== 'Booked') set.calendlyLinkStatus = 'Booked';
       if (c.calendlyLinkSent !== 'Sent') { set.calendlyLinkSent = 'Sent'; set.calendlyLinkSentAt = new Date(); }
-      if (Object.keys(set).length === 0) continue;
-      await Candidate.updateOne({ _id: c._id }, { $set: { ...set, updatedAt: new Date() } });
-      summary.bookedFromEvents = (summary.bookedFromEvents || 0) + 1;
+      const statusChanged = Object.keys(set).length > 0;
+      const info = bookings.get(c.email) || {};
+      if (info.account && c.calendlyAccount !== info.account) set.calendlyAccount = info.account;
+      // $min keeps the earliest booking date, and fills it in for people who were already Booked before dates were tracked.
+      const update = {};
+      if (Object.keys(set).length > 0) update.$set = { ...set, updatedAt: new Date() };
+      if (info.bookedAt) update.$min = { 'stageDates.booked': info.bookedAt };
+      if (!update.$set && !update.$min) continue;
+      await Candidate.updateOne({ _id: c._id }, update);
+      if (statusChanged) summary.bookedFromEvents = (summary.bookedFromEvents || 0) + 1;
     }
   } catch (err) {
     summary.bookingsError = err.message;
@@ -125,7 +143,9 @@ async function syncCalendlyBookings({ paceMs = PACE_MS, rateLimitWaitMs = RATE_L
           summary.keptBooked = (summary.keptBooked || 0) + 1;
         } else if (r.status !== c.calendlyLinkStatus) {
           // updateOne so the cached candidate list is dropped when a status really changes.
-          await Candidate.updateOne({ _id: c._id }, { $set: { calendlyLinkStatus: r.status, updatedAt: new Date() } });
+          const upd = { $set: { calendlyLinkStatus: r.status, updatedAt: new Date() } };
+          if (r.status === 'Booked') upd.$min = { 'stageDates.booked': new Date() };
+          await Candidate.updateOne({ _id: c._id }, upd);
           summary.updated += 1;
         }
       } else if (r.status >= 400 && r.status < 500 && r.status !== 401 && r.status !== 403) {

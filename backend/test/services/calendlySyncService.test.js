@@ -10,7 +10,8 @@ jest.mock('../../services/calendlyService', () => ({
   checkCalendlyStatus: (...a) => mockCheck(...a),
   calendlyConfigured: () => mockConfigured,
   listRecentEvents: (...a) => mockEvents(...a),
-  listEventInvitees: (...a) => mockInvitees(...a)
+  listEventInvitees: (...a) => mockInvitees(...a),
+  describeAccounts: async () => [{ name: 'Hiring Team' }, { name: 'Kartik Mishra' }]
 }));
 const { syncCalendlyBookings, getLastRun } = require('../../services/calendlySyncService');
 const FAST = { paceMs: 0, rateLimitWaitMs: 0 };
@@ -132,6 +133,28 @@ describe('syncCalendlyBookings: bookings from Calendly events', () => {
     expect(update.$set).toMatchObject({ calendlyLinkStatus: 'Booked', calendlyLinkSent: 'Sent' });
     expect(update.$set.calendlyLinkSentAt).toBeInstanceOf(Date);
     expect(mockUpdateOne).toHaveBeenCalledTimes(1); // b is already Booked + Sent: untouched
+  });
+
+  it('records which account the booking is on and the real booking date, filling it in for people already Booked', async () => {
+    // a version tag no other test uses: the sync skips events it has already read at the same version
+    const e = (n, account) => ({ ...ev(n, 'acct-test'), _account: account });
+    mockEvents.mockResolvedValue([e(1, 0), e(2, 1)]);
+    mockInvitees.mockImplementation(async (uuid) => (uuid === 'ev1'
+      ? [{ email: 'a@x.com', created_at: '2026-11-10T09:00:00Z' }]
+      : [{ email: 'b@x.com', created_at: '2026-11-12T09:00:00Z' }]));
+    mockFind.mockReturnValueOnce(query([
+      { _id: 'a', email: 'a@x.com', calendlyLinkStatus: null, calendlyLinkSent: null, calendlyAccount: null },
+      { _id: 'b', email: 'b@x.com', calendlyLinkStatus: 'Booked', calendlyLinkSent: 'Sent', calendlyAccount: null }
+    ])).mockReturnValue(query([]));
+    const r = await syncCalendlyBookings(FAST);
+    const byId = Object.fromEntries(mockUpdateOne.mock.calls.map(([f, u]) => [f._id, u]));
+    expect(byId.a.$set).toMatchObject({ calendlyLinkStatus: 'Booked', calendlyAccount: 'Hiring Team' });
+    expect(byId.a.$min['stageDates.booked']).toEqual(new Date('2026-11-10T09:00:00Z'));
+    // b was already Booked + Sent, but still gets its account and booking date (no status change)
+    expect(byId.b.$set).toMatchObject({ calendlyAccount: 'Kartik Mishra' });
+    expect(byId.b.$set.calendlyLinkStatus).toBeUndefined();
+    expect(byId.b.$min['stageDates.booked']).toEqual(new Date('2026-11-12T09:00:00Z'));
+    expect(r.bookedFromEvents).toBe(1); // only a changed status
   });
 
   it('reads each event once: a repeat run skips unchanged events but re-reads an updated one', async () => {

@@ -7,6 +7,7 @@ import { getColumnsForType, getOptionsForColumn } from '../utils/columnOptions';
 import { fetchRoles } from '../api/api';
 import { useEmploymentTypes } from '../contexts/EmploymentTypesContext';
 import usePersistentState from '../utils/usePersistentState';
+import CodingFunnelReport from './CodingFunnelReport';
 
 Chart.register(...registerables);
 
@@ -53,6 +54,7 @@ function StatisticsReport() {
   const [error, setError] = useState('');
   const [exporting, setExporting] = useState(false);
   const { employmentTypes } = useEmploymentTypes();
+  const [view, setView] = usePersistentState('statistics.view', 'general');
   const [roleCodes, setRoleCodes] = useState([]);
   // Filters survive switching tabs (see utils/usePersistentState.js).
   const [filters, setFilters] = usePersistentState('statistics.filters', {
@@ -178,13 +180,33 @@ function StatisticsReport() {
 
   useEffect(() => { loadStatistics(); }, [filters]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // General (the original report below) or Coding (the coding-candidate funnel by stage and date).
+  const viewToggle = (
+    <div className="filters-row" style={{ marginBottom: 12 }}>
+      <button className={view === 'general' ? 'btn-primary' : 'btn-secondary'} onClick={() => setView('general')}>General</button>
+      <button className={view === 'coding' ? 'btn-primary' : 'btn-secondary'} onClick={() => setView('coding')}>Coding</button>
+    </div>
+  );
+
+  if (view === 'coding') {
+    return (
+      <div className="statistics-report">
+        <h1 className="page-title">Statistics and Report</h1>
+        <p className="page-sub">Coding candidates: how many reached each stage, by the date they reached it</p>
+        {viewToggle}
+        <CodingFunnelReport />
+      </div>
+    );
+  }
+
   if (loading && !statistics) {
-    return <div className="statistics-report"><div className="loading">Loading statistics...</div></div>;
+    return <div className="statistics-report">{viewToggle}<div className="loading">Loading statistics...</div></div>;
   }
 
   if (error) {
     return (
       <div className="statistics-report">
+        {viewToggle}
         <div className="alert alert-error">⚠️ {error}</div>
         <button className="btn btn-secondary" onClick={loadStatistics}>Retry</button>
       </div>
@@ -269,6 +291,7 @@ function StatisticsReport() {
     <div className="statistics-report">
       <h1 className="page-title">Statistics and Report</h1>
       <p className="page-sub">Comprehensive analytics and reporting dashboard</p>
+      {viewToggle}
 
       {/* Key Metrics */}
       <div className="stats-grid">

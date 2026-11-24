@@ -24,6 +24,8 @@ const SLACK_STATUS_OPTIONS = ['Invited', 'Joined', 'Not Joined', 'Not Interested
 const BOOTCAMP_ATTEMPTS_OPTIONS = ['Attempt 1', 'Attempt 2', 'Attempt 3'];
 const BOOTCAMP_STATUS_OPTIONS = ['Pass', 'Fail', 'Full Fail', 'Not Active', 'Active', 'Direct to client'];
 const ONBOARDING_OPTIONS = ['Sent', 'Not Sent', 'Not Interested', 'Done'];
+const ORIENTATION_OPTIONS = ['Attempted', 'Not attempted'];
+const ORIENTATION_INTEREST_OPTIONS = ['Interested', 'Not interested'];
 const PROJECT_STATUS_OPTIONS = ['On Hold', 'Complete', 'Not Active', 'In Pipeline', 'Banned / Disqualified'];
 const DEFAULT_PROJECTS = ['Terminus', 'Snorkle', 'Alegion'];
 
@@ -1039,6 +1041,8 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
                     <th>Slack</th>
                     <th>Bootcamp Attempts</th>
                     <th>Bootcamp Status</th>
+                    <th>Orientation</th>
+                    <th>Interest after orientation</th>
                     <th>Onboarding</th>
                     <th>Project</th>
                     <th>Project Status</th>
@@ -1128,6 +1132,8 @@ const medicalMode = filters.employmentType === 'Medical Hiring' || (filters.role
                                 { field: 'slackStatus', options: SLACK_STATUS_OPTIONS, label: 'Slack' },
                                 { field: 'bootcampAttempts', options: BOOTCAMP_ATTEMPTS_OPTIONS, label: 'Bootcamp Attempts' },
                                 { field: 'bootcampStatus', options: BOOTCAMP_STATUS_OPTIONS, label: 'Bootcamp Status' },
+                                { field: 'bootcampOrientation', options: ORIENTATION_OPTIONS, label: 'Orientation' },
+                                { field: 'orientationInterest', options: ORIENTATION_INTEREST_OPTIONS, label: 'Interest after orientation' },
                                 { field: 'onboarding', options: ONBOARDING_OPTIONS, label: 'Onboarding' }
                               ].map(({ field, options }) => (
                                 <td key={field}>

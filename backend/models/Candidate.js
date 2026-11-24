@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 
+const { STAGES, STAGE_FIELDS, newlyReachedUndated } = require('../utils/stageDates');
+
 const candidateSchema = new mongoose.Schema({
   fullName: { type: String, required: true, trim: true },
   email: { type: String, required: true, trim: true, lowercase: true, index: true },
@@ -41,6 +43,12 @@ const candidateSchema = new mongoose.Schema({
   slackStatus: { type: String, enum: ['Invited', 'Joined', 'Not Joined', 'Not Interested'], default: null },
   bootcampAttempts: { type: String, enum: ['Attempt 1', 'Attempt 2', 'Attempt 3'], default: null },
   bootcampStatus: { type: String, enum: ['Pass', 'Fail', 'Full Fail', 'Not Active', 'Active', 'Direct to client'], default: null },
+  // Bootcamp orientation: did they attend it, and (from the interest form) do they still want in afterwards.
+  bootcampOrientation: { type: String, enum: ['Attempted', 'Not attempted'], default: null },
+  orientationInterest: { type: String, enum: ['Interested', 'Not interested'], default: null },
+  // Which connected Calendly account (e.g. 'Kartik Mishra', 'Hiring Team') the booking was made on. Filled by the
+  // Calendly sync from the booking itself; older bookings can be loaded once from the hiring tracker.
+  calendlyAccount: { type: String, default: null },
   onboarding: { type: String, enum: ['Sent', 'Not Sent', 'Not Interested', 'Done'], default: null },
   // Bootcamp cohorts this candidate was listed in. A person can be in several batches,
   // each with its own Joined / Not joined (null = the sheet left it blank).
@@ -148,6 +156,10 @@ const candidateSchema = new mongoose.Schema({
     }
   ],
 
+  // First time each funnel stage was reached (see utils/stageDates.js). No defaults on purpose: an absent date
+  // means "not recorded", and the Calendly/outreach writers use $min so the earliest date wins.
+  stageDates: Object.fromEntries(STAGES.filter((s) => s.key !== 'imported').map((s) => [s.key, { type: Date }])),
+
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });
@@ -190,6 +202,26 @@ function enforcePrefixForRoleCode(doc) {
   }
 }
 candidateSchema.post('init', enforcePrefixForRoleCode);
+
+// Stamp the date a funnel stage is first reached. Compares the stored record with the one being saved, so only a
+// real transition gets a date: an old record that merely gets edited later is NOT dated "today".
+// Best effort - a failure here must never block the save.
+candidateSchema.pre('save', async function loadStageBefore() {
+  try {
+    this.$locals.stageBefore = this.isNew ? null : await this.constructor.findById(this._id).select(STAGE_FIELDS).lean();
+  } catch (err) {
+    this.$locals.stageBefore = undefined;
+  }
+});
+candidateSchema.post('save', async function stampStageDates(doc) {
+  try {
+    if (doc.$locals.stageBefore === undefined) return;
+    const set = newlyReachedUndated(doc.$locals.stageBefore, doc.toObject());
+    if (Object.keys(set).length) await doc.constructor.collection.updateOne({ _id: doc._id }, { $set: set });
+  } catch (err) {
+    console.error('[stageDates] could not stamp stage dates:', err.message);
+  }
+});
 
 require('../utils/responseCache').invalidateOnWrite(candidateSchema);
 
